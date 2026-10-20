@@ -47,7 +47,7 @@ canvas{display:block}
 <script src="shared.js"></script>
 <script>
 const $=id=>document.getElementById(id);
-let ws,me=null,players=new Map(),arrows=new Map(),selfData=null,yaw=0,pitch=0,vy=0,charging=0,dead=false,locked=false,joined=false;
+let ws,me=null,players=new Map(),arrows=new Map(),impacts=new Set(),selfData=null,yaw=0,pitch=0,vy=0,charging=0,dead=false,locked=false,joined=false,knifeSlashStyle=2;
 const pos=new THREE.Vector3(),keys={};let trees=[];
 // ---------- scene ----------
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x9bd1a8);scene.fog=new THREE.Fog(0x9bd1a8,10,75);
@@ -67,6 +67,72 @@ function buildTrees(seed){
 }
 const arrowGeo=new THREE.CylinderGeometry(.03,.03,1,5);arrowGeo.rotateX(Math.PI/2);
 const arrowMat=new THREE.MeshBasicMaterial({color:0xf5e6b0});
+const projectileWoodMat=new THREE.MeshLambertMaterial({color:0x9a6337});
+const projectileSteelMat=new THREE.MeshLambertMaterial({color:0xc7d0d2});
+const projectileFeatherMat=new THREE.MeshLambertMaterial({color:0x9d3e2f});
+const projectileBrassMat=new THREE.MeshLambertMaterial({color:0xd6a64b});
+const projectileShaftGeo=new THREE.CylinderGeometry(.012,.016,.72,6);projectileShaftGeo.rotateX(Math.PI/2);
+const projectileHeadGeo=new THREE.ConeGeometry(.035,.14,6);projectileHeadGeo.rotateX(Math.PI/2);
+const projectileFeatherGeo=new THREE.BoxGeometry(.035,.006,.14);
+const bulletBodyGeo=new THREE.CylinderGeometry(.022,.022,.16,8);bulletBodyGeo.rotateX(Math.PI/2);
+const bulletHeadGeo=new THREE.ConeGeometry(.022,.06,8);bulletHeadGeo.rotateX(Math.PI/2);
+const daggerBladeGeo=new THREE.ConeGeometry(.032,.24,6);daggerBladeGeo.rotateX(Math.PI/2);
+const daggerHandleGeo=new THREE.CylinderGeometry(.018,.018,.15,6);daggerHandleGeo.rotateX(Math.PI/2);
+const daggerGuardGeo=new THREE.BoxGeometry(.12,.025,.025);
+const daggerHandleMat=new THREE.MeshLambertMaterial({color:0x493326});
+const bulletHoleMat=new THREE.MeshBasicMaterial({color:0x160f0c,side:THREE.DoubleSide,depthWrite:false});
+const bulletRimMat=new THREE.MeshBasicMaterial({color:0x70452c,side:THREE.DoubleSide,depthWrite:false});
+const bulletHoleGeo=new THREE.CircleGeometry(.04,12);
+const bulletRimGeo=new THREE.TorusGeometry(.04,.008,4,12);
+const knifeSlashGeo=new THREE.BoxGeometry(1,.035,.008);
+const knifeSlashMat=new THREE.MeshBasicMaterial({color:0x281714,side:THREE.DoubleSide,depthWrite:false});
+const knifeTrailGeo=new THREE.TorusGeometry(.36,.025,6,28,Math.PI*.85);
+const knifeTrailMat=new THREE.MeshBasicMaterial({color:0xf1dfc2,transparent:true,opacity:0,depthTest:false,depthWrite:false});
+const knifeSlashPaths=[[[.24,.24],[-.24,-.24]],[[0,.34],[0,-.34]],[[-.34,0],[.34,0]]];
+function mkProjectile(kind){
+  const g=new THREE.Group();
+  if(kind===2){
+    const body=new THREE.Mesh(bulletBodyGeo,projectileBrassMat);body.position.z=-.025;
+    const tip=new THREE.Mesh(bulletHeadGeo,projectileSteelMat);tip.position.z=.085;
+    g.add(body,tip);return g;
+  }
+  if(kind===3){
+    const blade=new THREE.Mesh(daggerBladeGeo,projectileSteelMat);blade.position.z=.13;
+    const handle=new THREE.Mesh(daggerHandleGeo,daggerHandleMat);handle.position.z=-.065;
+    const guard=new THREE.Mesh(daggerGuardGeo,projectileBrassMat);guard.position.z=.005;
+    g.add(blade,handle,guard);return g;
+  }
+  const shaft=new THREE.Mesh(projectileShaftGeo,projectileWoodMat);
+  const tip=new THREE.Mesh(projectileHeadGeo,projectileSteelMat);tip.position.z=.4;
+  const feathers=[];
+  for(let i=0;i<3;i++){
+    const feather=new THREE.Mesh(projectileFeatherGeo,projectileFeatherMat);
+    const angle=i*Math.PI*2/3;feather.position.set(Math.cos(angle)*.018,Math.sin(angle)*.018,-.3);feather.rotation.z=angle;feathers.push(feather);
+  }
+  const nock=new THREE.Mesh(new THREE.TorusGeometry(.014,.003,4,8),projectileBrassMat);nock.position.z=-.36;
+  g.add(shaft,tip,nock,...feathers);return g;
+}
+function showImpact(m){
+  const mark=m.k===2&&m.surface==='tree'?new THREE.Group():m.k===2?null:mkProjectile(m.k);
+  if(!mark)return;
+  const position=new THREE.Vector3(m.x,m.y,m.z),normal=new THREE.Vector3(m.nx,m.ny,m.nz).normalize();
+  if(m.k===2){
+    const rim=new THREE.Mesh(bulletRimGeo,bulletRimMat),hole=new THREE.Mesh(bulletHoleGeo,bulletHoleMat);hole.position.z=.002;mark.add(rim,hole);
+    mark.position.copy(position).addScaledVector(normal,.006);
+    mark.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),normal);
+  }else{
+    mark.position.copy(position);
+    mark.lookAt(position.x+m.vx,position.y+m.vy,position.z+m.vz);
+  }
+  mark.userData.expires=performance.now()+5000;scene.add(mark);impacts.add(mark);
+}
+function showKnifeMark(m){
+  const mark=new THREE.Group(),path=knifeSlashPaths[m.style],dx=path[1][0]-path[0][0],dy=path[1][1]-path[0][1];
+  const stroke=new THREE.Mesh(knifeSlashGeo,knifeSlashMat);stroke.position.set((path[0][0]+path[1][0])/2,(path[0][1]+path[1][1])/2,0);stroke.scale.x=Math.hypot(dx,dy);stroke.rotation.z=Math.atan2(dy,dx);mark.add(stroke);
+  const position=new THREE.Vector3(m.x,m.y,m.z),normal=new THREE.Vector3(m.nx,m.ny,m.nz).normalize();
+  mark.position.copy(position).addScaledVector(normal,.008);mark.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),normal);
+  mark.userData.expires=performance.now()+5000;scene.add(mark);impacts.add(mark);
+}
 // ---------- crossbow ----------
 const woodMat=new THREE.MeshLambertMaterial({color:0x6b4423}),steelMat=new THREE.MeshLambertMaterial({color:0x3d4349});
 const prodGeo=new THREE.TorusGeometry(.3,.022,6,20,Math.PI);prodGeo.rotateX(-Math.PI/2);
@@ -85,9 +151,7 @@ function mkXbow(){
 const fpX=mkXbow();fpX.position.set(.16,-.2,-.5);fpX.rotation.y=.04;cam.add(fpX);
 let lastList=[],cur=0,bnT;
 const shotAt=[0,0,0,0,0],WN=['crossbow','bow','musket','dagger','knife'];
-const WD={crossbow:{charge:3000,reload:300},bow:{charge:1000,reload:300},musket:{charge:0,reload:5000},dagger:{charge:0,reload:600},knife:{charge:0,reload:700}};
-const kindMat=[arrowMat,arrowMat,new THREE.MeshBasicMaterial({color:0xffd24a}),new THREE.MeshBasicMaterial({color:0xcfd8dc}),arrowMat];
-const ASC=[[1,1,1.2],[1,1,1.2],[3,3,.35],[3,3,.4],[1,1,1]];
+const WD={crossbow:{charge:1500,reload:0},bow:{charge:500,reload:0},musket:{charge:0,reload:5000},dagger:{charge:0,reload:0},knife:{charge:0,reload:100}};
 const bowGeo=new THREE.TorusGeometry(.4,.025,6,20,Math.PI);bowGeo.rotateZ(Math.PI/2);bowGeo.rotateY(-Math.PI/2);
 function mkBow(){
   const g=new THREE.Group();g.add(new THREE.Mesh(bowGeo,woodMat));
@@ -98,7 +162,12 @@ function mkBow(){
 }
 function mkMusket(){
   const g=new THREE.Group(),bar=new THREE.Mesh(new THREE.CylinderGeometry(.022,.022,1.1,8),steelMat);bar.rotation.x=Math.PI/2;bar.position.z=-.45;
-  const st=new THREE.Mesh(new THREE.BoxGeometry(.06,.1,.5),woodMat);st.position.set(0,-.03,.2);g.add(bar,st);return g;
+  const st=new THREE.Mesh(new THREE.BoxGeometry(.06,.1,.5),woodMat);st.position.set(0,-.03,.2);
+  const fore=new THREE.Mesh(new THREE.BoxGeometry(.075,.075,.55),woodMat);fore.position.set(0,-.015,-.45);
+  const ramrod=new THREE.Mesh(new THREE.CylinderGeometry(.008,.008,.76,6),steelMat);ramrod.rotation.x=Math.PI/2;ramrod.position.set(-.05,-.07,-.43);
+  const hammer=new THREE.Mesh(new THREE.BoxGeometry(.035,.08,.045),steelMat);hammer.position.set(.04,.045,.06);
+  const flash=new THREE.Mesh(new THREE.ConeGeometry(.075,.24,7),new THREE.MeshBasicMaterial({color:0xffc85a,transparent:true,opacity:.9}));flash.rotation.x=-Math.PI/2;flash.position.z=-1.08;flash.visible=false;
+  g.add(bar,st,fore,ramrod,hammer,flash);g.ramrod=ramrod;g.hammer=hammer;g.flash=flash;return g;
 }
 function mkBlade(len,w){
   const g=new THREE.Group(),bl=new THREE.Mesh(new THREE.BoxGeometry(w,.012,len),new THREE.MeshLambertMaterial({color:0xd0d6da}));bl.position.z=-len/2;
@@ -108,6 +177,7 @@ function mkBlade(len,w){
 const fpB=mkBow(),VM=[fpX,fpB,mkMusket(),mkBlade(.28,.035),mkBlade(.42,.05)];
 [[0,0,0],[.3,-.22,-.6],[.16,-.18,-.4],[.22,-.18,-.4],[.22,-.2,-.45]].forEach((p,i)=>{if(i){VM[i].position.set(...p);cam.add(VM[i])}});
 VM[3].rotation.z=.4;VM[4].rotation.z=.5;
+const knifeTrail=new THREE.Mesh(knifeTrailGeo,knifeTrailMat);knifeTrail.renderOrder=20;cam.add(knifeTrail);
 // ---------- sound (synthesized, no files) ----------
 let AC,master,NB;
 function audio(){
@@ -170,6 +240,8 @@ function on(m){
     $('menu').style.display='none';$('hud').style.display='block';
     $('code').textContent=(m.pub?'Public match':'Lobby code: '+m.code);showMsg('Click to play');
   }else if(m.t==='s')snapshot(m);
+  else if(m.t==='impact')showImpact(m);
+  else if(m.t==='slash')showKnifeMark(m);
   else if(m.t==='kill'){
     if(m.ki===me)sfx.kill();else if(m.vi===me)sfx.die();
     const d=document.createElement('div');if(m.ki===me||m.vi===me)d.className='me';
@@ -192,7 +264,7 @@ function snapshot(m){
   const as=new Set();
   for(const [id,x,y,z,vx,vy2,vz,g,k] of m.a){
     as.add(id);let a=arrows.get(id);
-    if(!a){a={g,mesh:new THREE.Mesh(arrowGeo,kindMat[k]),p:new THREE.Vector3(),v:new THREE.Vector3()};a.mesh.scale.set(...ASC[k]);scene.add(a.mesh);arrows.set(id,a);const d0=Math.hypot(x-pos.x,y-pos.y-1.6,z-pos.z);if(d0>6&&d0<45)sfx.whoosh(1-d0/45)}
+    if(!a){a={g,mesh:mkProjectile(k),p:new THREE.Vector3(),v:new THREE.Vector3()};scene.add(a.mesh);arrows.set(id,a);const d0=Math.hypot(x-pos.x,y-pos.y-1.6,z-pos.z);if(d0>6&&d0<45)sfx.whoosh(1-d0/45)}
     a.p.set(x,y,z);a.v.set(vx,vy2,vz);
   }
   for(const [id,a] of arrows)if(!as.has(id)){const d1=a.p.distanceTo(cam.position);if(d1<45)sfx.thunk(1-d1/45);scene.remove(a.mesh);arrows.delete(id)}
@@ -217,7 +289,7 @@ addEventListener('keyup',e=>{keys[e.code]=0;if(e.code==='Tab')showTab(false)});a
 rend.domElement.addEventListener('click',()=>{audio();if(joined)rend.domElement.requestPointerLock()});
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===rend.domElement;showMsg(locked?(dead?'Eliminated. Respawning…':''):(joined?'Click to play':''))});
 addEventListener('mousemove',e=>{if(!locked)return;yaw-=e.movementX*.0022;pitch=Math.max(-1.5,Math.min(1.5,pitch-e.movementY*.0022))});
-const fire=()=>{shotAt[cur]=performance.now();tx({t:'s',x:pos.x,y:pos.y,z:pos.z,yaw,pitch});sfx[WN[cur]]()};
+const fire=()=>{shotAt[cur]=performance.now();if(cur===4)knifeSlashStyle=(knifeSlashStyle+1)%3;tx({t:'s',x:pos.x,y:pos.y,z:pos.z,yaw,pitch});sfx[WN[cur]]()};
 addEventListener('mousedown',e=>{
   if(!locked||dead||e.button!==0)return;const D=WD[WN[cur]],now=performance.now();
   if(now-shotAt[cur]<D.reload)return;
@@ -247,13 +319,40 @@ function frame(now){
   cam.position.set(pos.x,pos.y+1.6,pos.z);cam.rotation.set(pitch,yaw,0);
   for(const p of players.values()){if(!p.t)continue;p.g.position.lerp(p.t,.3);p.g.rotation.y=p.yaw}
   for(const a of arrows.values()){a.v.y-=a.g*dt;a.p.addScaledVector(a.v,dt);a.mesh.position.copy(a.p);a.mesh.lookAt(a.p.x+a.v.x,a.p.y+a.v.y,a.p.z+a.v.z)} // gravity curve
-  const D=WD[WN[cur]],rl=Math.min(1,(now-shotAt[cur])/D.reload),pull=charging&&D.charge?Math.min(1,(now-charging)/D.charge):0;
+  for(const mark of impacts){const left=mark.userData.expires-now;if(left<=0){scene.remove(mark);impacts.delete(mark)}else if(left<500)mark.scale.setScalar(left/500)}
+  const D=WD[WN[cur]],shotElapsed=shotAt[cur]?now-shotAt[cur]:Infinity;
+  const rl=D.reload?Math.min(1,shotElapsed/D.reload):1,pull=charging&&D.charge?Math.min(1,(now-charging)/D.charge):0;
+  const shotPulse=shotElapsed<.35?Math.exp(-shotElapsed*12):0;
   VM.forEach((m,i)=>m.visible=joined&&!dead&&i===cur);
-  if(cur===0){fpX.setNock(rl<1?-.45+rl*.25:-.2+pull*.08);fpX.bolt.visible=rl>=1;fpX.position.set(.16,-.2,-.5+pull*.03)}
-  else if(cur===1)fpB.setNock(pull*.28,!!charging);
-  else if(cur===2)VM[2].rotation.x=rl<1?-.9*Math.sin(Math.min(1,rl*1.1)*Math.PI):0;
-  else if(cur===3)VM[3].visible=VM[3].visible&&rl>=1;
-  else{const sw=rl<.5?Math.sin(rl*2*Math.PI):0;VM[4].rotation.x=-sw*1.1;VM[4].position.z=-.45-sw*.25}
+  if(cur===0){
+    const snap=shotElapsed<.14?-.08*(1-shotElapsed/.14):0;
+    fpX.setNock(rl<1?-.45+rl*.25:-.2+pull*.08+snap);fpX.bolt.visible=rl>=1&&shotElapsed>.14;
+    fpX.position.set(.16,-.2-shotPulse*.025,-.5+pull*.03+shotPulse*.14);fpX.rotation.x=shotPulse*.16;
+  }else if(cur===1){
+    const snap=shotElapsed<.18?-.08*(1-shotElapsed/.18):0;
+    fpB.setNock(charging?pull*.28:snap,!!charging||shotElapsed>.18);
+    fpB.position.set(.3+shotPulse*.015,-.22-shotPulse*.025,-.6+shotPulse*.12);fpB.rotation.x=-shotPulse*.12;
+  }else if(cur===2){
+    const reloading=shotAt[cur]>0&&rl<1;
+    const reloadMotion=reloading?Math.sin(Math.PI*Math.max(0,Math.min(1,(rl-.12)/.76))):0;
+    const rodMotion=reloading&&rl>.2&&rl<.78?Math.sin(Math.PI*(rl-.2)/.58):0;
+    VM[2].position.set(.16+reloadMotion*.025,-.18-reloadMotion*.12-shotPulse*.03,-.4+reloadMotion*.06+shotPulse*.18);
+    VM[2].rotation.x=reloadMotion*.24-shotPulse*.22;VM[2].ramrod.position.z=-.43+rodMotion*.3;
+    VM[2].hammer.rotation.x=reloading&&rl>.78?-.6*(1-rl)/.22:0;
+    VM[2].flash.visible=shotElapsed<.09;VM[2].flash.scale.setScalar(shotElapsed<.09?1+shotElapsed*4:0);
+  }else if(cur===3){
+    const slash=shotElapsed<.45?Math.sin(Math.PI*Math.min(1,shotElapsed/.28))*Math.max(0,1-shotElapsed/.45):0;
+    VM[3].position.set(.22,-.18-slash*.06,-.4+slash*.18);VM[3].rotation.set(-slash*1.15,0,.4-slash*.55);
+  }else{
+    const stab=shotElapsed<.42?Math.sin(Math.PI*Math.min(1,shotElapsed/.3))*Math.max(0,1-shotElapsed/.42):0;
+    VM[4].position.set(.22,-.2-stab*.03,-.45+stab*.2);
+    if(knifeSlashStyle===0)VM[4].rotation.set(.5-stab*1.35,stab*.45,.5+stab*.1);
+    else if(knifeSlashStyle===1)VM[4].rotation.set(.5-stab*1.75,0,.5-stab*.15);
+    else VM[4].rotation.set(.5-stab*.2,stab*1.7,.5-stab*.65);
+    knifeTrail.visible=joined&&!dead&&shotElapsed<.65;knifeTrail.material.opacity=knifeTrail.visible?Math.max(0,1-shotElapsed/.65)*.85:0;
+    knifeTrail.position.set(.03,-.08,-.75);knifeTrail.scale.setScalar(.45+stab*.12);
+    knifeTrail.rotation.z=knifeSlashStyle===0?-.65:knifeSlashStyle===1?Math.PI/2:0;
+  }
   const cb=$('charge').firstChild;cb.style.width=((rl<1?rl:pull)*100)+'%';cb.style.background=rl<1?'#888':pull>=1?'#5fbf6a':'#e0b341';
   const wt=WN.map((n,i)=>i===cur?'<b>'+n+'</b>':n).join(' · ')+(rl<1&&D.reload>1000?' — reloading '+((1-rl)*D.reload/1000).toFixed(1)+'s':'');
   if(wt!==frame.w){frame.w=wt;$('wpn').innerHTML=wt}

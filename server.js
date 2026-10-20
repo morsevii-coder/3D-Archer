@@ -7,11 +7,11 @@ const S=require(path.join(PUB,'shared.js'));
 const MAXP=8,HP=3;
 // ---- WEAPON TABLE (tweak freely). charge/reload in ms, speed in m/s, g = arrow gravity (0 = straight) ----
 const W=[
-  {name:'crossbow',charge:3000,reload:300,speed:95,g:0},
-  {name:'bow',charge:1000,reload:300,speed:45,g:S.G},
+  {name:'crossbow',charge:1500,reload:0,speed:95,g:0},
+  {name:'bow',charge:500,reload:0,speed:45,g:S.G},
   {name:'musket',charge:0,reload:5000,speed:160,g:0},
-  {name:'dagger',charge:0,reload:600,speed:85,g:0,miss:.5},
-  {name:'knife',charge:0,reload:700,melee:2.6}
+  {name:'dagger',charge:0,reload:0,speed:85,g:0,miss:.5},
+  {name:'knife',charge:0,reload:100,melee:2.6}
 ];
 const types={'.html':'text/html','.js':'text/javascript'};
 const server=http.createServer((q,r)=>{
@@ -25,7 +25,7 @@ const rooms=new Map();let nid=1;
 const send=(p,m)=>p.ws.readyState===1&&p.ws.send(JSON.stringify(m));
 const bc=(r,m)=>{for(const p of r.players.values())send(p,m)};
 function mkRoom(pub){
-  let code;do code=Array.from({length:4},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.random()*24|0]).join('');while(rooms.has(code));
+  let code;do code=Array.from({length:5},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.random()*24|0]).join('');while(rooms.has(code));
   const r={code,pub,seed:Math.random()*1e9|0,players:new Map(),arrows:[],round:false,nextStart:0};
   r.trees=S.genTrees(r.seed);rooms.set(code,r);return r;
 }
@@ -57,7 +57,7 @@ wss.on('connection',ws=>{
         if(!r)return send({ws},{t:'err',msg:'Lobby not found'});
         if(r.players.size>=MAXP)return send({ws},{t:'err',msg:'Lobby is full'})}
       const s=spawn(r);
-      me={id:nid++,ws,name:String(m.name||'Archer').slice(0,14),x:s.x,y:0,z:s.z,yaw:0,pitch:0,hearts:HP,score:0,kills:0,
+      me={id:nid++,ws,name:String(m.name||'Archer').slice(0,14),x:s.x,y:0,z:s.z,yaw:0,pitch:0,hearts:HP,score:0,kills:0,knifeSlash:2,
           dead:false,prot:Date.now()+2000,respawnAt:0,w:0,cs:0,ready:[0,0,0,0,0]};
       room=r;r.players.set(me.id,me);
       send(me,{t:'welcome',id:me.id,code:r.code,pub:r.pub,seed:r.seed,x:me.x,z:me.z});
@@ -72,13 +72,40 @@ wss.on('connection',ws=>{
       me.cs=0;me.ready[me.w]=now+w.reload;applyMove(me,m);
       const dx=-Math.sin(me.yaw)*Math.cos(me.pitch),dy=Math.sin(me.pitch),dz=-Math.cos(me.yaw)*Math.cos(me.pitch);
       if(w.melee){ // knife: nearest player in front within range = instant kill
+        const slash=me.knifeSlash=(me.knifeSlash+1)%3;
         let best=null,bd=w.melee;
         for(const p of room.players.values()){
           if(p===me||p.dead||p.prot>Date.now())continue;
           const ex=p.x-me.x,ey=p.y+1-(me.y+1.6),ez=p.z-me.z,d=Math.hypot(ex,ey,ez);
           if(d<bd&&(ex*dx+ey*dy+ez*dz)/d>.6){best=p;bd=d}
         }
-        if(best)damage(room,me,best,HP,me.w);
+        if(best){
+          const nx=me.x-best.x,ny=me.y+1.6-(best.y+1),nz=me.z-best.z,n=Math.hypot(nx,ny,nz)||1;
+          bc(room,{t:'slash',style:slash,x:best.x+nx/n*.35,y:best.y+1+ny/n*.2,z:best.z+nz/n*.35,nx:nx/n,ny:ny/n,nz:nz/n});
+          damage(room,me,best,HP,me.w);
+        }else{
+          let mark=null,markDistance=w.melee;
+          const originY=me.y+1.6;
+          for(const t of room.trees){
+            const ox=me.x-t.x,oz=me.z-t.z,radius=t.r*(1-.2*originY/t.h),radiusSlope=-t.r*.2*dy/t.h;
+            const qa=dx*dx+dz*dz-radiusSlope*radiusSlope,qb=2*(ox*dx+oz*dz-radius*radiusSlope),qc=ox*ox+oz*oz-radius*radius;
+            const discriminant=qb*qb-4*qa*qc;
+            if(discriminant<0)continue;
+            const roots=qa? [(-qb-Math.sqrt(discriminant))/(2*qa),(-qb+Math.sqrt(discriminant))/(2*qa)]:[-qc/qb];
+            for(const distance of roots){
+              if(distance<=0||distance>=markDistance)continue;
+              const x=me.x+dx*distance,y=originY+dy*distance,z=me.z+dz*distance;
+              if(y<=0||y>=t.h)continue;
+              const treeRadius=t.r*(1-.2*y/t.h),nx=x-t.x,nz=z-t.z,ny=treeRadius*.2*t.r/t.h,n=Math.hypot(nx,ny,nz)||1;
+              mark={surface:'tree',x,y,z,nx:nx/n,ny:ny/n,nz:nz/n};markDistance=distance;break;
+            }
+          }
+          if(dy<0){
+            const distance=-originY/dy;
+            if(distance>0&&distance<markDistance){mark={surface:'ground',x:me.x+dx*distance,y:0,z:me.z+dz*distance,nx:0,ny:1,nz:0};}
+          }
+          if(mark)bc(room,{t:'slash',style:slash,surface:mark.surface,x:mark.x,y:mark.y,z:mark.z,nx:mark.nx,ny:mark.ny,nz:mark.nz});
+        }
       }else room.arrows.push({id:nid++,owner:me.id,k:me.w,g:w.g,miss:w.miss||0,skip:new Set(),
         x:me.x,y:me.y+1.6,z:me.z,vx:dx*w.speed,vy:dy*w.speed,vz:dz*w.speed,age:0,n:Math.max(4,Math.ceil(w.speed/60/.25))});
     }
@@ -93,19 +120,28 @@ function damage(r,k,v,dmg,wi){
   }else if(k)k.score+=25;
   if(k)send(k,{t:'hit'});
 }
+function broadcastImpact(r,a,surface,x,y,z,nx,ny,nz,targetId=0){
+  bc(r,{t:'impact',id:a.id,k:a.k,surface,x,y,z,nx,ny,nz,vx:a.vx,vy:a.vy,vz:a.vz,targetId});
+}
 function step(r,dt){
   for(let i=r.arrows.length-1;i>=0;i--){
     const a=r.arrows[i];let gone=false;const h=dt/a.n;
     for(let s=0;s<a.n&&!gone;s++){
       a.vy-=a.g*h;a.x+=a.vx*h;a.y+=a.vy*h;a.z+=a.vz*h;
-      if(a.y<=0||Math.abs(a.x)>S.MAP+5||Math.abs(a.z)>S.MAP+5){gone=true;break}
-      for(const t of r.trees){const dx=a.x-t.x,dz=a.z-t.z;if(dx*dx+dz*dz<t.r*t.r&&a.y<t.h){gone=true;break}} // trees block shots
+      if(a.y<=0){a.y=0;broadcastImpact(r,a,'ground',a.x,a.y,a.z,0,1,0);gone=true;break}
+      if(Math.abs(a.x)>S.MAP+5||Math.abs(a.z)>S.MAP+5){gone=true;break}
+      for(const t of r.trees){
+        const dx=a.x-t.x,dz=a.z-t.z,d=Math.hypot(dx,dz);
+        if(d<t.r&&a.y<t.h){const nx=dx/(d||1),nz=dz/(d||1);broadcastImpact(r,a,'tree',t.x+nx*t.r,a.y,t.z+nz*t.r,nx,0,nz);gone=true;break}
+      } // trees block shots
       if(gone)break;
       for(const p of r.players.values()){
         if(p.id===a.owner||p.dead||p.prot>Date.now()||a.skip.has(p.id))continue; // 2s spawn protection
         const dx=a.x-p.x,dz=a.z-p.z;
         if(dx*dx+dz*dz<.25&&a.y>p.y&&a.y<p.y+1.9){
           if(a.miss&&Math.random()<a.miss){a.skip.add(p.id);continue} // dagger: 50% chance to miss
+          const nx=dx,ny=a.y-(p.y+1),nz=dz,n=Math.hypot(nx,ny,nz)||1;
+          broadcastImpact(r,a,'player',a.x,a.y,a.z,nx/n,ny/n,nz/n,p.id);
           damage(r,r.players.get(a.owner),p,1,a.k);gone=true;break;
         }
       }
