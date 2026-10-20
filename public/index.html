@@ -28,15 +28,19 @@ canvas{display:block}
 #board div{display:flex;justify-content:space-between;gap:16px}#board .me{color:#ffd166}
 #msg{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:28px;background:#0006;text-align:center}
 #flash{position:absolute;inset:0;background:#d00;opacity:0;transition:opacity .3s}
+#tab{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;min-width:420px;max-width:92vw;background:#07140bdd;border:2px solid #e0b341;border-radius:8px;padding:14px 18px}
+#tab h2{margin:0 0 8px;font:700 20px Georgia,serif;color:#f0d98a}
+#tab table{width:100%;border-collapse:collapse;font-size:16px}#tab th{text-align:left;opacity:.6;font-weight:500;padding:4px 8px}
+#tab td{padding:5px 8px}#tab td+td,#tab th+th{text-align:right}#tab tr.me td{color:#ffd166;font-weight:700}#tab tr.x td{opacity:.45}
 </style></head><body>
-<div id="menu"><h1>3D Archer</h1><p>Three hearts. One arrow. Mind the drop.</p>
+<div id="menu"><h1>3D Archer</h1><p>Three hearts. One arrow. Mind the drop.<br><small>Hold Tab for the scoreboard · M to mute</small></p>
 <input id="name" maxlength="14" placeholder="Your name">
 <button class="g" id="pub">Play public match</button>
 <button id="mk">Create lobby</button>
 <div class="row"><input id="jc" maxlength="4" placeholder="CODE"><button id="jn">Join lobby</button></div>
 <div id="err"></div></div>
 <div id="hud"><div id="flash"></div><div id="cross"></div><div id="code"></div><div id="feed"></div><div id="board"></div>
-<div id="me"></div><div id="hearts"></div><div id="charge"><i></i></div><div id="msg"></div></div>
+<div id="me"></div><div id="hearts"></div><div id="charge"><i></i></div><div id="msg"></div><div id="tab"></div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="shared.js"></script>
 <script>
@@ -46,7 +50,7 @@ const pos=new THREE.Vector3(),keys={};let trees=[];
 // ---------- scene ----------
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x9bd1a8);scene.fog=new THREE.Fog(0x9bd1a8,10,75);
 const cam=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,200);cam.rotation.order='YXZ';
-const rend=new THREE.WebGLRenderer({antialias:true});rend.setSize(innerWidth,innerHeight);document.body.prepend(rend.domElement);
+const rend=new THREE.WebGLRenderer({antialias:true});rend.setSize(innerWidth,innerHeight);document.body.prepend(rend.domElement);scene.add(cam);
 scene.add(new THREE.HemisphereLight(0xffffff,0x335533,.9));
 const sun=new THREE.DirectionalLight(0xfff2cc,.7);sun.position.set(30,50,20);scene.add(sun);
 const ground=new THREE.Mesh(new THREE.PlaneGeometry(MAP*2+20,MAP*2+20),new THREE.MeshLambertMaterial({color:0x3e7a3a}));ground.rotation.x=-Math.PI/2;scene.add(ground);
@@ -61,6 +65,43 @@ function buildTrees(seed){
 }
 const arrowGeo=new THREE.CylinderGeometry(.03,.03,1,5);arrowGeo.rotateX(Math.PI/2);
 const arrowMat=new THREE.MeshBasicMaterial({color:0xf5e6b0});
+// ---------- bow ----------
+const woodMat=new THREE.MeshLambertMaterial({color:0x8a5a2b});
+const bowGeo=new THREE.TorusGeometry(.4,.025,6,20,Math.PI);bowGeo.rotateZ(Math.PI/2);bowGeo.rotateY(-Math.PI/2);
+const fpBow=new THREE.Group();fpBow.add(new THREE.Mesh(bowGeo,woodMat));
+const strG=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,.4,0),new THREE.Vector3(0,0,0),new THREE.Vector3(0,-.4,0)]);
+const strP=strG.attributes.position;fpBow.add(new THREE.Line(strG,new THREE.LineBasicMaterial({color:0xeeeeee})));
+const fpArrow=new THREE.Mesh(arrowGeo,new THREE.MeshLambertMaterial({color:0xf5e6b0}));fpArrow.scale.z=.8;fpArrow.visible=false;fpBow.add(fpArrow);
+fpBow.position.set(.3,-.22,-.6);fpBow.rotation.set(0,.12,.1);cam.add(fpBow);
+let lastShot=0,lastList=[];
+// ---------- sound (synthesized, no files) ----------
+let AC,master,NB;
+function audio(){
+  if(AC)return;AC=new(window.AudioContext||window.webkitAudioContext)();master=AC.createGain();master.gain.value=.5;master.connect(AC.destination);
+  NB=AC.createBuffer(1,AC.sampleRate,AC.sampleRate);const d=NB.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  const w=AC.createBufferSource(),wf=AC.createBiquadFilter(),wg=AC.createGain();w.buffer=NB;w.loop=true;wf.type='lowpass';wf.frequency.value=450;wg.gain.value=.06;w.connect(wf);wf.connect(wg);wg.connect(master);w.start();
+  (function birds(){setTimeout(()=>{if(master.gain.value){const f=2000+Math.random()*1500;tone('sine',f,f*1.3,.09,.05);tone('sine',f*1.2,f*1.5,.09,.05,.12)}birds()},3000+Math.random()*6000)})();
+}
+function tone(type,f0,f1,dur,vol,delay=0){
+  if(!AC)return;const t=AC.currentTime+delay,o=AC.createOscillator(),g=AC.createGain();o.type=type;
+  o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(f1,t+dur);
+  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+dur);o.connect(g);g.connect(master);o.start(t);o.stop(t+dur);
+}
+function noise(dur,vol,f0,f1,type='bandpass'){
+  if(!AC)return;const t=AC.currentTime,s=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain();s.buffer=NB;f.type=type;
+  f.frequency.setValueAtTime(f0,t);f.frequency.exponentialRampToValueAtTime(f1,t+dur);
+  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+dur);s.connect(f);f.connect(g);g.connect(master);s.start(t);s.stop(t+dur);
+}
+const sfx={
+  draw:()=>tone('sawtooth',90,190,.7,.05),
+  shoot:()=>{tone('triangle',420,90,.18,.25);noise(.25,.35,3000,600)},
+  whoosh:v=>noise(.35,.3*v,2500,500),
+  thunk:v=>{tone('sine',150,50,.12,.35*v);noise(.08,.2*v,900,300)},
+  hit:()=>tone('sine',1100,1600,.12,.3),
+  hurt:()=>{tone('square',160,50,.25,.2);noise(.15,.3,800,200,'lowpass')},
+  kill:()=>{tone('sine',700,700,.12,.3);tone('sine',1050,1050,.22,.3,.1)},
+  die:()=>tone('sawtooth',300,60,.6,.2)
+};
 function label(text){
   const c=document.createElement('canvas');c.width=256;c.height=64;const x=c.getContext('2d');
   x.font='bold 34px system-ui';x.textAlign='center';x.fillStyle='#000a';x.fillRect(0,8,256,48);x.fillStyle='#fff';x.fillText(text,128,45);
@@ -70,10 +111,10 @@ function mkPlayer(name,id){
   const g=new THREE.Group(),col=new THREE.Color().setHSL((id*.37)%1,.6,.5),m=new THREE.MeshLambertMaterial({color:col});
   const b=new THREE.Mesh(new THREE.CylinderGeometry(.35,.35,1.2,8),m);b.position.y=.6;
   const h=new THREE.Mesh(new THREE.SphereGeometry(.25,10,8),new THREE.MeshLambertMaterial({color:0xe8c39e}));h.position.y=1.5;
-  g.add(b,h,label(name));scene.add(g);return g;
+  const wb=new THREE.Mesh(bowGeo,woodMat);wb.scale.set(.6,.6,.6);wb.position.set(.4,1.15,-.25);g.add(b,h,wb,label(name));scene.add(g);return g;
 }
 // ---------- network ----------
-function go(mode,code){
+function go(mode,code){audio();
   $('err').textContent='';
   ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
   ws.onopen=()=>ws.send(JSON.stringify({t:'join',name:$('name').value.trim()||'Archer',mode,code}));
@@ -89,12 +130,13 @@ function on(m){
     $('code').textContent=(m.pub?'Public match':'Lobby code: '+m.code);showMsg('Click to play');
   }else if(m.t==='s')snapshot(m);
   else if(m.t==='kill'){
+    if(m.ki===me)sfx.kill();else if(m.vi===me)sfx.die();
     const d=document.createElement('div');if(m.ki===me||m.vi===me)d.className='me';
     d.innerHTML=`<b class="k"></b> 🏹 <b class="v"></b>`;d.children[0].textContent=m.k;d.children[1].textContent=m.v;
     $('feed').append(d);setTimeout(()=>d.remove(),5000);if($('feed').children.length>6)$('feed').firstChild.remove();
   }else if(m.t==='rs'){pos.set(m.x,0,m.z);vy=0;dead=false;showMsg(locked?'':'Click to play')}
-  else if(m.t==='hurt'){$('flash').style.opacity=.5;setTimeout(()=>$('flash').style.opacity=0,120)}
-  else if(m.t==='hit'){$('cross').classList.add('hit');setTimeout(()=>$('cross').classList.remove('hit'),150)}
+  else if(m.t==='hurt'){sfx.hurt();$('flash').style.opacity=.5;setTimeout(()=>$('flash').style.opacity=0,120)}
+  else if(m.t==='hit'){sfx.hit();$('cross').classList.add('hit');setTimeout(()=>$('cross').classList.remove('hit'),150)}
 }
 function snapshot(m){
   const seen=new Set();
@@ -108,28 +150,35 @@ function snapshot(m){
   const as=new Set();
   for(const [id,x,y,z,vx,vy2,vz] of m.a){
     as.add(id);let a=arrows.get(id);
-    if(!a){a={mesh:new THREE.Mesh(arrowGeo,arrowMat),p:new THREE.Vector3(),v:new THREE.Vector3()};a.mesh.scale.z=1.2;scene.add(a.mesh);arrows.set(id,a)}
+    if(!a){a={mesh:new THREE.Mesh(arrowGeo,arrowMat),p:new THREE.Vector3(),v:new THREE.Vector3()};a.mesh.scale.z=1.2;scene.add(a.mesh);arrows.set(id,a);const d0=Math.hypot(x-pos.x,y-pos.y-1.6,z-pos.z);if(d0>6&&d0<45)sfx.whoosh(1-d0/45)}
     a.p.set(x,y,z);a.v.set(vx,vy2,vz);
   }
-  for(const [id,a] of arrows)if(!as.has(id)){scene.remove(a.mesh);arrows.delete(id)}
+  for(const [id,a] of arrows)if(!as.has(id)){const d1=a.p.distanceTo(cam.position);if(d1<45)sfx.thunk(1-d1/45);scene.remove(a.mesh);arrows.delete(id)}
   hud(m.p);
 }
-function hud(list){
+function hud(list){lastList=list;if($('tab').style.display==='block')renderTab();
   if(selfData){$('hearts').textContent='❤'.repeat(selfData.hp)+'🖤'.repeat(Math.max(0,3-selfData.hp));$('me').textContent=selfData.sc+' pts · '+selfData.kl+' kills'}
   $('board').innerHTML=[...list].sort((a,b)=>b[8]-a[8]).slice(0,6).map(p=>`<div class="${p[0]===me?'me':''}"><span>${p[1].replace(/</g,'&lt;')}</span><span>${p[8]}</span></div>`).join('');
 }
+const esc=t=>String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function renderTab(){
+  $('tab').innerHTML='<h2>Scoreboard</h2><table><tr><th>Archer</th><th>Kills</th><th>Points</th><th>Hearts</th></tr>'+
+  [...lastList].sort((a,b)=>b[8]-a[8]).map(p=>`<tr class="${p[0]===me?'me':p[9]?'x':''}"><td>${esc(p[1])}</td><td>${p[10]}</td><td>${p[8]}</td><td>${p[9]?'dead':'❤'.repeat(p[7])}</td></tr>`).join('')+'</table>';
+}
+function showTab(on){$('tab').style.display=on?'block':'none';if(on)renderTab()}
 function showMsg(t){const e=$('msg');e.textContent=t;e.style.display=t?'flex':'none'}
 // ---------- input ----------
 $('pub').onclick=()=>go('public');$('mk').onclick=()=>go('create');
 $('jn').onclick=()=>go('join',$('jc').value);
-addEventListener('keydown',e=>{keys[e.code]=1});addEventListener('keyup',e=>{keys[e.code]=0});
-rend.domElement.addEventListener('click',()=>{if(joined)rend.domElement.requestPointerLock()});
+addEventListener('keydown',e=>{keys[e.code]=1;if(e.code==='Tab'){e.preventDefault();if(joined)showTab(true)}if(e.code==='KeyM'&&master)master.gain.value=master.gain.value?0:.5});
+addEventListener('keyup',e=>{keys[e.code]=0;if(e.code==='Tab')showTab(false)});addEventListener('blur',()=>showTab(false));
+rend.domElement.addEventListener('click',()=>{audio();if(joined)rend.domElement.requestPointerLock()});
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===rend.domElement;showMsg(locked?(dead?'You were eliminated. Respawning…':''):(joined?'Click to play':''))});
 addEventListener('mousemove',e=>{if(!locked)return;yaw-=e.movementX*.0022;pitch=Math.max(-1.5,Math.min(1.5,pitch-e.movementY*.0022))});
-addEventListener('mousedown',e=>{if(locked&&!dead&&e.button===0)charging=performance.now()});
+addEventListener('mousedown',e=>{if(locked&&!dead&&e.button===0){charging=performance.now();sfx.draw()}});
 addEventListener('mouseup',e=>{
   if(charging&&e.button===0){const c=Math.min(1,(performance.now()-charging)/1000);charging=0;$('charge').firstChild.style.width=0;
-    if(!dead)tx({t:'s',c,x:pos.x,y:pos.y,z:pos.z,yaw,pitch})}
+    if(!dead&&performance.now()-lastShot>600){lastShot=performance.now();tx({t:'s',c,x:pos.x,y:pos.y,z:pos.z,yaw,pitch});sfx.shoot()}}
 });
 addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();rend.setSize(innerWidth,innerHeight)});
 // ---------- loop ----------
@@ -149,6 +198,7 @@ function frame(now){
   cam.position.set(pos.x,pos.y+1.6,pos.z);cam.rotation.set(pitch,yaw,0);
   for(const p of players.values()){if(!p.t)continue;p.g.position.lerp(p.t,.3);p.g.rotation.y=p.yaw}
   for(const a of arrows.values()){a.v.y-=G*dt;a.p.addScaledVector(a.v,dt);a.mesh.position.copy(a.p);a.mesh.lookAt(a.p.x+a.v.x,a.p.y+a.v.y,a.p.z+a.v.z)} // gravity curve
+  const pull=charging?Math.min(1,(now-charging)/1000):0;strP.setZ(1,pull*.28);strP.needsUpdate=true;fpArrow.visible=!!charging&&!dead;fpArrow.position.z=pull*.28-.4;fpBow.visible=joined&&!dead;
   rend.render(scene,cam);
 }
 requestAnimationFrame(frame);
