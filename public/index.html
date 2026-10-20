@@ -65,14 +65,22 @@ function buildTrees(seed){
 }
 const arrowGeo=new THREE.CylinderGeometry(.03,.03,1,5);arrowGeo.rotateX(Math.PI/2);
 const arrowMat=new THREE.MeshBasicMaterial({color:0xf5e6b0});
-// ---------- bow ----------
-const woodMat=new THREE.MeshLambertMaterial({color:0x8a5a2b});
-const bowGeo=new THREE.TorusGeometry(.4,.025,6,20,Math.PI);bowGeo.rotateZ(Math.PI/2);bowGeo.rotateY(-Math.PI/2);
-const fpBow=new THREE.Group();fpBow.add(new THREE.Mesh(bowGeo,woodMat));
-const strG=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,.4,0),new THREE.Vector3(0,0,0),new THREE.Vector3(0,-.4,0)]);
-const strP=strG.attributes.position;fpBow.add(new THREE.Line(strG,new THREE.LineBasicMaterial({color:0xeeeeee})));
-const fpArrow=new THREE.Mesh(arrowGeo,new THREE.MeshLambertMaterial({color:0xf5e6b0}));fpArrow.scale.z=.8;fpArrow.visible=false;fpBow.add(fpArrow);
-fpBow.position.set(.3,-.22,-.6);fpBow.rotation.set(0,.12,.1);cam.add(fpBow);
+// ---------- crossbow ----------
+const woodMat=new THREE.MeshLambertMaterial({color:0x6b4423}),steelMat=new THREE.MeshLambertMaterial({color:0x3d4349});
+const prodGeo=new THREE.TorusGeometry(.3,.022,6,20,Math.PI);prodGeo.rotateX(-Math.PI/2);
+function mkXbow(){
+  const g=new THREE.Group();
+  const stock=new THREE.Mesh(new THREE.BoxGeometry(.07,.07,.75),woodMat);stock.position.z=-.1;
+  const grip=new THREE.Mesh(new THREE.BoxGeometry(.05,.14,.06),woodMat);grip.position.set(0,-.09,.15);grip.rotation.x=.3;
+  const prod=new THREE.Mesh(prodGeo,steelMat);prod.position.z=-.45;
+  const sg=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-.3,0,-.45),new THREE.Vector3(0,0,-.2),new THREE.Vector3(.3,0,-.45)]);
+  const strP=sg.attributes.position;
+  const bolt=new THREE.Mesh(arrowGeo,new THREE.MeshLambertMaterial({color:0xf5e6b0}));bolt.scale.set(.7,.7,.5);bolt.position.y=.06;
+  g.add(stock,grip,prod,new THREE.Line(sg,new THREE.LineBasicMaterial({color:0xeeeeee})),bolt);
+  g.setNock=z=>{strP.setZ(1,z);strP.needsUpdate=true;bolt.position.z=z-.25};
+  g.bolt=bolt;g.setNock(-.2);return g;
+}
+const fpX=mkXbow();fpX.position.set(.16,-.2,-.5);fpX.rotation.y=.04;cam.add(fpX);
 let lastShot=0,lastList=[];
 // ---------- sound (synthesized, no files) ----------
 let AC,master,NB;
@@ -93,8 +101,9 @@ function noise(dur,vol,f0,f1,type='bandpass'){
   g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+dur);s.connect(f);f.connect(g);g.connect(master);s.start(t);s.stop(t+dur);
 }
 const sfx={
-  draw:()=>tone('sawtooth',90,190,.7,.05),
-  shoot:()=>{tone('triangle',420,90,.18,.25);noise(.25,.35,3000,600)},
+  draw:()=>tone('triangle',140,260,.9,.04),
+  cock:()=>{[.1,.2,.3,.4,.5].forEach(d=>tone('square',1100,800,.03,.06,d));tone('square',300,200,.05,.2,.58)},
+  shoot:()=>{tone('square',260,60,.08,.3);tone('triangle',500,200,.1,.2);noise(.12,.4,4000,800)},
   whoosh:v=>noise(.35,.3*v,2500,500),
   thunk:v=>{tone('sine',150,50,.12,.35*v);noise(.08,.2*v,900,300)},
   hit:()=>tone('sine',1100,1600,.12,.3),
@@ -111,7 +120,7 @@ function mkPlayer(name,id){
   const g=new THREE.Group(),col=new THREE.Color().setHSL((id*.37)%1,.6,.5),m=new THREE.MeshLambertMaterial({color:col});
   const b=new THREE.Mesh(new THREE.CylinderGeometry(.35,.35,1.2,8),m);b.position.y=.6;
   const h=new THREE.Mesh(new THREE.SphereGeometry(.25,10,8),new THREE.MeshLambertMaterial({color:0xe8c39e}));h.position.y=1.5;
-  const wb=new THREE.Mesh(bowGeo,woodMat);wb.scale.set(.6,.6,.6);wb.position.set(.4,1.15,-.25);g.add(b,h,wb,label(name));scene.add(g);return g;
+  const wb=mkXbow();wb.scale.setScalar(.7);wb.position.set(.3,1.1,0);g.add(b,h,wb,label(name));scene.add(g);return g;
 }
 // ---------- network ----------
 function go(mode,code){audio();
@@ -178,7 +187,7 @@ addEventListener('mousemove',e=>{if(!locked)return;yaw-=e.movementX*.0022;pitch=
 addEventListener('mousedown',e=>{if(locked&&!dead&&e.button===0){charging=performance.now();sfx.draw()}});
 addEventListener('mouseup',e=>{
   if(charging&&e.button===0){const c=Math.min(1,(performance.now()-charging)/1000);charging=0;$('charge').firstChild.style.width=0;
-    if(!dead&&performance.now()-lastShot>600){lastShot=performance.now();tx({t:'s',c,x:pos.x,y:pos.y,z:pos.z,yaw,pitch});sfx.shoot()}}
+    if(!dead&&performance.now()-lastShot>600){lastShot=performance.now();tx({t:'s',c,x:pos.x,y:pos.y,z:pos.z,yaw,pitch});sfx.shoot();sfx.cock()}}
 });
 addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();rend.setSize(innerWidth,innerHeight)});
 // ---------- loop ----------
@@ -198,7 +207,8 @@ function frame(now){
   cam.position.set(pos.x,pos.y+1.6,pos.z);cam.rotation.set(pitch,yaw,0);
   for(const p of players.values()){if(!p.t)continue;p.g.position.lerp(p.t,.3);p.g.rotation.y=p.yaw}
   for(const a of arrows.values()){a.v.y-=G*dt;a.p.addScaledVector(a.v,dt);a.mesh.position.copy(a.p);a.mesh.lookAt(a.p.x+a.v.x,a.p.y+a.v.y,a.p.z+a.v.z)} // gravity curve
-  const pull=charging?Math.min(1,(now-charging)/1000):0;strP.setZ(1,pull*.28);strP.needsUpdate=true;fpArrow.visible=!!charging&&!dead;fpArrow.position.z=pull*.28-.4;fpBow.visible=joined&&!dead;
+  const rl=Math.min(1,(now-lastShot)/600),pull=charging?Math.min(1,(now-charging)/1000):0;
+  fpX.setNock(rl<1?-.45+rl*.25:-.2+pull*.08);fpX.bolt.visible=rl>=1&&!dead;fpX.visible=joined&&!dead;fpX.position.z=-.5+pull*.03;
   rend.render(scene,cam);
 }
 requestAnimationFrame(frame);
