@@ -26,7 +26,7 @@ const send=(p,m)=>p.ws.readyState===1&&p.ws.send(JSON.stringify(m));
 const bc=(r,m)=>{for(const p of r.players.values())send(p,m)};
 function mkRoom(pub,mode='skirmish'){
   let code;do code=Array.from({length:5},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.random()*24|0]).join('');while(rooms.has(code));
-  const r={code,pub,mode,seed:Math.random()*1e9|0,players:new Map(),arrows:[],mobs:[],mobsStarted:false,nextMobSpawn:0,round:false,nextStart:0};
+  const r={code,pub,mode,seed:Math.random()*1e9|0,players:new Map(),arrows:[],mobs:[],mobsStarted:false,nextMobSpawn:0,bearsKilled:0,round:false,nextStart:0};
   r.trees=S.genTrees(r.seed);rooms.set(code,r);return r;
 }
 function spawn(r){ // skirmish: pick the free spot farthest from other living players
@@ -62,12 +62,13 @@ function spawnMob(r,type){
 function maintainMobs(r,now){
   if(!r.mobsStarted){
     r.mobsStarted=true;
-    for(const type of ['chicken','chicken','chicken','rabbit','rabbit','bear'])spawnMob(r,type);
+    for(const type of ['chicken','chicken','chicken','rabbit','rabbit','bear','bear','bear','bear','bear'])spawnMob(r,type);
     r.nextMobSpawn=now+2500;
   }
   if(now<r.nextMobSpawn)return;
   const counts={chicken:0,rabbit:0,bear:0};for(const mob of r.mobs)counts[mob.type]++;
-  const next=counts.chicken<6?'chicken':counts.rabbit<4?'rabbit':counts.bear<2?'bear':null;
+  const bearTarget=5+Math.floor(r.bearsKilled/2);
+  const next=counts.chicken<6?'chicken':counts.rabbit<4?'rabbit':counts.bear<bearTarget?'bear':null;
   if(next)spawnMob(r,next);
   r.nextMobSpawn=now+2500;
 }
@@ -75,6 +76,12 @@ function damageMob(r,player,mob,damage){
   mob.hp=Math.max(0,mob.hp-damage);
   if(mob.hp>0)return;
   r.mobs.splice(r.mobs.indexOf(mob),1);
+  if(mob.type==='bear'){
+    r.bearsKilled++;
+    const bearTarget=5+Math.floor(r.bearsKilled/2);
+    let bearCount=r.mobs.filter(other=>other.type==='bear').length;
+    while(bearCount<bearTarget&&spawnMob(r,'bear'))bearCount++;
+  }
   player.score+=MOB_RULES[mob.type].points;
   const healed=mob.type==='bear'&&player.hearts<HP;
   if(healed)player.hearts=Math.min(HP,player.hearts+1);
@@ -109,13 +116,12 @@ wss.on('connection',ws=>{
     let m;try{m=JSON.parse(raw)}catch{return}
     if(m.t==='join'&&!room){
       let r;
-      if(m.mode==='public'||m.mode==='survival'){
-        const mode=m.mode==='survival'?'survival':'skirmish';
-        r=[...rooms.values()].find(x=>x.pub&&x.mode===mode&&x.players.size<MAXP)||mkRoom(true,mode);
-      }
+      if(m.mode==='survival')r=mkRoom(false,'survival');
+      else if(m.mode==='public')r=[...rooms.values()].find(x=>x.pub&&x.mode==='skirmish'&&x.players.size<MAXP)||mkRoom(true,'skirmish');
       else if(m.mode==='create')r=mkRoom(false);
       else{r=rooms.get(String(m.code||'').toUpperCase());
         if(!r)return send({ws},{t:'err',msg:'Lobby not found'});
+        if(r.mode==='survival')return send({ws},{t:'err',msg:'Survival runs are solo'});
         if(r.players.size>=MAXP)return send({ws},{t:'err',msg:'Lobby is full'})}
       const s=spawn(r);
       me={id:nid++,ws,name:String(m.name||'Archer').slice(0,14),x:s.x,y:0,z:s.z,yaw:0,pitch:0,hearts:HP,score:0,kills:0,knifeSlash:2,

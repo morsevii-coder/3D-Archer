@@ -305,7 +305,7 @@ function on(m){
     joined=true;me=m.id;survivalMode=m.mode==='survival';gameOver=false;survivalElapsed=0;buildTrees(m.seed);pos.set(m.x,0,m.z);
     $('menu').style.display='none';$('hud').style.display='block';
     $('survivalTimer').style.display=survivalMode?'block':'none';$('survivalTimer').textContent='SURVIVED 00:00';
-    $('code').textContent=m.mode==='survival'?'Survival · Public':(m.pub?'Public match':'Lobby code: '+m.code);showMsg('Click to play');
+    $('code').textContent=m.mode==='survival'?'Survival · Solo':(m.pub?'Public match':'Lobby code: '+m.code);showMsg('Click to play');
   }else if(m.t==='s')snapshot(m);
   else if(m.t==='impact')showImpact(m);
   else if(m.t==='slash')showKnifeMark(m);
