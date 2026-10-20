@@ -32,15 +32,17 @@ canvas{display:block}
 #tab h2{margin:0 0 8px;font:700 20px Georgia,serif;color:#f0d98a}
 #tab table{width:100%;border-collapse:collapse;font-size:16px}#tab th{text-align:left;opacity:.6;font-weight:500;padding:4px 8px}
 #tab td{padding:5px 8px}#tab td+td,#tab th+th{text-align:right}#tab tr.me td{color:#ffd166;font-weight:700}#tab tr.x td{opacity:.45}
+#wpn{position:absolute;left:50%;bottom:46px;transform:translateX(-50%);font-size:15px;text-shadow:0 1px 3px #000;white-space:nowrap}#wpn b{color:#e0b341;font-size:17px}
+#banner{position:absolute;top:58px;left:50%;transform:translateX(-50%);font:700 26px Georgia,serif;color:#f0d98a;text-shadow:0 2px 6px #000;text-align:center}
 </style></head><body>
-<div id="menu"><h1>3D Archer</h1><p>Three hearts. One arrow. Mind the drop.<br><small>Hold Tab for the scoreboard · M to mute</small></p>
+<div id="menu"><h1>3D Archer</h1><p>Three hearts. One arrow. Mind the drop.<br><small>Hold Tab for the scoreboard · M to mute · Q to swap weapon</small></p>
 <input id="name" maxlength="14" placeholder="Your name">
 <button class="g" id="pub">Play public match</button>
 <button id="mk">Create lobby</button>
 <div class="row"><input id="jc" maxlength="4" placeholder="CODE"><button id="jn">Join lobby</button></div>
 <div id="err"></div></div>
 <div id="hud"><div id="flash"></div><div id="cross"></div><div id="code"></div><div id="feed"></div><div id="board"></div>
-<div id="me"></div><div id="hearts"></div><div id="charge"><i></i></div><div id="msg"></div><div id="tab"></div></div>
+<div id="me"></div><div id="hearts"></div><div id="charge"><i></i></div><div id="msg"></div><div id="wpn"></div><div id="banner"></div><div id="tab"></div></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="shared.js"></script>
 <script>
@@ -81,7 +83,31 @@ function mkXbow(){
   g.bolt=bolt;g.setNock(-.2);return g;
 }
 const fpX=mkXbow();fpX.position.set(.16,-.2,-.5);fpX.rotation.y=.04;cam.add(fpX);
-let lastShot=0,lastList=[];
+let lastList=[],cur=0,bnT;
+const shotAt=[0,0,0,0,0],WN=['crossbow','bow','musket','dagger','knife'];
+const WD={crossbow:{charge:3000,reload:300},bow:{charge:1000,reload:300},musket:{charge:0,reload:5000},dagger:{charge:0,reload:600},knife:{charge:0,reload:700}};
+const kindMat=[arrowMat,arrowMat,new THREE.MeshBasicMaterial({color:0xffd24a}),new THREE.MeshBasicMaterial({color:0xcfd8dc}),arrowMat];
+const ASC=[[1,1,1.2],[1,1,1.2],[3,3,.35],[3,3,.4],[1,1,1]];
+const bowGeo=new THREE.TorusGeometry(.4,.025,6,20,Math.PI);bowGeo.rotateZ(Math.PI/2);bowGeo.rotateY(-Math.PI/2);
+function mkBow(){
+  const g=new THREE.Group();g.add(new THREE.Mesh(bowGeo,woodMat));
+  const sg=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,.4,0),new THREE.Vector3(0,0,0),new THREE.Vector3(0,-.4,0)]),sp=sg.attributes.position;
+  g.add(new THREE.Line(sg,new THREE.LineBasicMaterial({color:0xeeeeee})));
+  const a=new THREE.Mesh(arrowGeo,new THREE.MeshLambertMaterial({color:0xf5e6b0}));a.scale.z=.8;g.add(a);
+  g.setNock=(z,show)=>{sp.setZ(1,z);sp.needsUpdate=true;a.position.z=z-.4;a.visible=show};g.setNock(0,false);return g;
+}
+function mkMusket(){
+  const g=new THREE.Group(),bar=new THREE.Mesh(new THREE.CylinderGeometry(.022,.022,1.1,8),steelMat);bar.rotation.x=Math.PI/2;bar.position.z=-.45;
+  const st=new THREE.Mesh(new THREE.BoxGeometry(.06,.1,.5),woodMat);st.position.set(0,-.03,.2);g.add(bar,st);return g;
+}
+function mkBlade(len,w){
+  const g=new THREE.Group(),bl=new THREE.Mesh(new THREE.BoxGeometry(w,.012,len),new THREE.MeshLambertMaterial({color:0xd0d6da}));bl.position.z=-len/2;
+  const h=new THREE.Mesh(new THREE.BoxGeometry(.03,.03,.14),woodMat);h.position.z=.07;
+  g.add(bl,h,new THREE.Mesh(new THREE.BoxGeometry(.1,.02,.02),steelMat));return g;
+}
+const fpB=mkBow(),VM=[fpX,fpB,mkMusket(),mkBlade(.28,.035),mkBlade(.42,.05)];
+[[0,0,0],[.3,-.22,-.6],[.16,-.18,-.4],[.22,-.18,-.4],[.22,-.2,-.45]].forEach((p,i)=>{if(i){VM[i].position.set(...p);cam.add(VM[i])}});
+VM[3].rotation.z=.4;VM[4].rotation.z=.5;
 // ---------- sound (synthesized, no files) ----------
 let AC,master,NB;
 function audio(){
@@ -109,7 +135,13 @@ const sfx={
   hit:()=>tone('sine',1100,1600,.12,.3),
   hurt:()=>{tone('square',160,50,.25,.2);noise(.15,.3,800,200,'lowpass')},
   kill:()=>{tone('sine',700,700,.12,.3);tone('sine',1050,1050,.22,.3,.1)},
-  die:()=>tone('sawtooth',300,60,.6,.2)
+  die:()=>tone('sawtooth',300,60,.6,.2),
+  swap:()=>tone('square',600,900,.04,.08),
+  crossbow:()=>{sfx.shoot();sfx.cock()},
+  bow:()=>{tone('triangle',420,90,.18,.25);noise(.25,.35,3000,600)},
+  musket:()=>{noise(.6,.8,2500,120,'lowpass');tone('sine',90,35,.4,.5);[1.2,2.4,3.4,4.3].forEach(d=>tone('square',800,500,.05,.1,d));tone('square',300,200,.06,.25,4.9)},
+  dagger:()=>noise(.2,.3,5000,1500),
+  knife:()=>noise(.18,.35,1200,4000)
 };
 function label(text){
   const c=document.createElement('canvas');c.width=256;c.height=64;const x=c.getContext('2d');
@@ -141,9 +173,10 @@ function on(m){
   else if(m.t==='kill'){
     if(m.ki===me)sfx.kill();else if(m.vi===me)sfx.die();
     const d=document.createElement('div');if(m.ki===me||m.vi===me)d.className='me';
-    d.innerHTML=`<b class="k"></b> 🏹 <b class="v"></b>`;d.children[0].textContent=m.k;d.children[1].textContent=m.v;
+    d.innerHTML=`<b class="k"></b> <span></span> <b class="v"></b>`;d.children[0].textContent=m.k;d.children[1].textContent=['🏹','🏹','🔫','🗡️','🔪'][m.w]+' '+WN[m.w];d.children[2].textContent=m.v;
     $('feed').append(d);setTimeout(()=>d.remove(),5000);if($('feed').children.length>6)$('feed').firstChild.remove();
   }else if(m.t==='rs'){pos.set(m.x,0,m.z);vy=0;dead=false;showMsg(locked?'':'Click to play')}
+  else if(m.t==='bn'){$('banner').textContent=m.text;clearTimeout(bnT);bnT=setTimeout(()=>$('banner').textContent='',4500)}
   else if(m.t==='hurt'){sfx.hurt();$('flash').style.opacity=.5;setTimeout(()=>$('flash').style.opacity=0,120)}
   else if(m.t==='hit'){sfx.hit();$('cross').classList.add('hit');setTimeout(()=>$('cross').classList.remove('hit'),150)}
 }
@@ -151,15 +184,15 @@ function snapshot(m){
   const seen=new Set();
   for(const [id,name,x,y,z,yw,pt,hp,sc,dd,kl] of m.p){
     seen.add(id);
-    if(id===me){selfData={hp,sc,kl};if(dd&&!dead){dead=true;showMsg('You were eliminated. Respawning…')}continue}
+    if(id===me){selfData={hp,sc,kl};if(dd&&!dead){dead=true;showMsg('Eliminated. Respawning…')}continue}
     let p=players.get(id);if(!p){p={g:mkPlayer(name,id)};players.set(id,p)}
     p.t=new THREE.Vector3(x,y,z);p.yaw=yw;p.g.visible=!dd;if(!p.init){p.g.position.copy(p.t);p.init=1}
   }
   for(const [id,p] of players)if(!seen.has(id)){scene.remove(p.g);players.delete(id)}
   const as=new Set();
-  for(const [id,x,y,z,vx,vy2,vz] of m.a){
+  for(const [id,x,y,z,vx,vy2,vz,g,k] of m.a){
     as.add(id);let a=arrows.get(id);
-    if(!a){a={mesh:new THREE.Mesh(arrowGeo,arrowMat),p:new THREE.Vector3(),v:new THREE.Vector3()};a.mesh.scale.z=1.2;scene.add(a.mesh);arrows.set(id,a);const d0=Math.hypot(x-pos.x,y-pos.y-1.6,z-pos.z);if(d0>6&&d0<45)sfx.whoosh(1-d0/45)}
+    if(!a){a={g,mesh:new THREE.Mesh(arrowGeo,kindMat[k]),p:new THREE.Vector3(),v:new THREE.Vector3()};a.mesh.scale.set(...ASC[k]);scene.add(a.mesh);arrows.set(id,a);const d0=Math.hypot(x-pos.x,y-pos.y-1.6,z-pos.z);if(d0>6&&d0<45)sfx.whoosh(1-d0/45)}
     a.p.set(x,y,z);a.v.set(vx,vy2,vz);
   }
   for(const [id,a] of arrows)if(!as.has(id)){const d1=a.p.distanceTo(cam.position);if(d1<45)sfx.thunk(1-d1/45);scene.remove(a.mesh);arrows.delete(id)}
@@ -179,36 +212,51 @@ function showMsg(t){const e=$('msg');e.textContent=t;e.style.display=t?'flex':'n
 // ---------- input ----------
 $('pub').onclick=()=>go('public');$('mk').onclick=()=>go('create');
 $('jn').onclick=()=>go('join',$('jc').value);
-addEventListener('keydown',e=>{keys[e.code]=1;if(e.code==='Tab'){e.preventDefault();if(joined)showTab(true)}if(e.code==='KeyM'&&master)master.gain.value=master.gain.value?0:.5});
+addEventListener('keydown',e=>{keys[e.code]=1;if(e.code==='Tab'){e.preventDefault();if(joined)showTab(true)}if(e.code==='KeyM'&&master)master.gain.value=master.gain.value?0:.5;if(e.code==='KeyQ'&&joined&&!dead&&!e.repeat){cur=(cur+1)%WN.length;charging=0;tx({t:'w',i:cur});sfx.swap()}});
 addEventListener('keyup',e=>{keys[e.code]=0;if(e.code==='Tab')showTab(false)});addEventListener('blur',()=>showTab(false));
 rend.domElement.addEventListener('click',()=>{audio();if(joined)rend.domElement.requestPointerLock()});
-document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===rend.domElement;showMsg(locked?(dead?'You were eliminated. Respawning…':''):(joined?'Click to play':''))});
+document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===rend.domElement;showMsg(locked?(dead?'Eliminated. Respawning…':''):(joined?'Click to play':''))});
 addEventListener('mousemove',e=>{if(!locked)return;yaw-=e.movementX*.0022;pitch=Math.max(-1.5,Math.min(1.5,pitch-e.movementY*.0022))});
-addEventListener('mousedown',e=>{if(locked&&!dead&&e.button===0){charging=performance.now();sfx.draw()}});
-addEventListener('mouseup',e=>{
-  if(charging&&e.button===0){const c=Math.min(1,(performance.now()-charging)/1000);charging=0;$('charge').firstChild.style.width=0;
-    if(!dead&&performance.now()-lastShot>600){lastShot=performance.now();tx({t:'s',c,x:pos.x,y:pos.y,z:pos.z,yaw,pitch});sfx.shoot();sfx.cock()}}
+const fire=()=>{shotAt[cur]=performance.now();tx({t:'s',x:pos.x,y:pos.y,z:pos.z,yaw,pitch});sfx[WN[cur]]()};
+addEventListener('mousedown',e=>{
+  if(!locked||dead||e.button!==0)return;const D=WD[WN[cur]],now=performance.now();
+  if(now-shotAt[cur]<D.reload)return;
+  if(D.charge){charging=now;tx({t:'c'});sfx.draw()}else fire();
+});
+addEventListener('mouseup',e=>{ // charged weapons: hold the full time, then release to fire
+  if(!charging||e.button!==0)return;const D=WD[WN[cur]],held=performance.now()-charging;charging=0;
+  if(!dead&&held>=D.charge)fire();
 });
 addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();rend.setSize(innerWidth,innerHeight)});
 // ---------- loop ----------
 let last=performance.now(),sent=0;
 function frame(now){
   requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000);last=now;
-  if(joined&&locked&&!dead){
-    const f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),sp=(keys.ShiftLeft?9:6)*dt;
+  if(joined&&locked){
+    const f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),sp=(keys.ShiftLeft?9:6)*dt*(dead?2:1);
     const l=Math.hypot(f,s)||1,sy=Math.sin(yaw),cy=Math.cos(yaw);
     pos.x+=(-sy*f+cy*s)/l*sp;pos.z+=(-cy*f-sy*s)/l*sp;
-    if(keys.Space&&pos.y===0)vy=7;vy-=20*dt;pos.y=Math.max(0,pos.y+vy*dt);if(pos.y===0)vy=0;
     pos.x=Math.max(-MAP,Math.min(MAP,pos.x));pos.z=Math.max(-MAP,Math.min(MAP,pos.z));
-    for(const t of trees){const dx=pos.x-t.x,dz=pos.z-t.z,d=Math.hypot(dx,dz),m=t.r+.4;if(d<m&&d>0){pos.x=t.x+dx/d*m;pos.z=t.z+dz/d*m}}
-    if(charging)$('charge').firstChild.style.width=Math.min(100,(now-charging)/10)+'%';
-    if(now-sent>50){sent=now;tx({t:'m',x:pos.x,y:pos.y,z:pos.z,yaw,pitch})}
+    if(dead)pos.y=10;
+    else{
+      if(keys.Space&&pos.y===0)vy=7;vy-=20*dt;pos.y=Math.max(0,pos.y+vy*dt);if(pos.y===0)vy=0;
+      for(const t of trees){const dx=pos.x-t.x,dz=pos.z-t.z,d=Math.hypot(dx,dz),m=t.r+.4;if(d<m&&d>0){pos.x=t.x+dx/d*m;pos.z=t.z+dz/d*m}}
+      if(now-sent>50){sent=now;tx({t:'m',x:pos.x,y:pos.y,z:pos.z,yaw,pitch})}
+    }
   }
   cam.position.set(pos.x,pos.y+1.6,pos.z);cam.rotation.set(pitch,yaw,0);
   for(const p of players.values()){if(!p.t)continue;p.g.position.lerp(p.t,.3);p.g.rotation.y=p.yaw}
-  for(const a of arrows.values()){a.v.y-=G*dt;a.p.addScaledVector(a.v,dt);a.mesh.position.copy(a.p);a.mesh.lookAt(a.p.x+a.v.x,a.p.y+a.v.y,a.p.z+a.v.z)} // gravity curve
-  const rl=Math.min(1,(now-lastShot)/600),pull=charging?Math.min(1,(now-charging)/1000):0;
-  fpX.setNock(rl<1?-.45+rl*.25:-.2+pull*.08);fpX.bolt.visible=rl>=1&&!dead;fpX.visible=joined&&!dead;fpX.position.z=-.5+pull*.03;
+  for(const a of arrows.values()){a.v.y-=a.g*dt;a.p.addScaledVector(a.v,dt);a.mesh.position.copy(a.p);a.mesh.lookAt(a.p.x+a.v.x,a.p.y+a.v.y,a.p.z+a.v.z)} // gravity curve
+  const D=WD[WN[cur]],rl=Math.min(1,(now-shotAt[cur])/D.reload),pull=charging&&D.charge?Math.min(1,(now-charging)/D.charge):0;
+  VM.forEach((m,i)=>m.visible=joined&&!dead&&i===cur);
+  if(cur===0){fpX.setNock(rl<1?-.45+rl*.25:-.2+pull*.08);fpX.bolt.visible=rl>=1;fpX.position.set(.16,-.2,-.5+pull*.03)}
+  else if(cur===1)fpB.setNock(pull*.28,!!charging);
+  else if(cur===2)VM[2].rotation.x=rl<1?-.9*Math.sin(Math.min(1,rl*1.1)*Math.PI):0;
+  else if(cur===3)VM[3].visible=VM[3].visible&&rl>=1;
+  else{const sw=rl<.5?Math.sin(rl*2*Math.PI):0;VM[4].rotation.x=-sw*1.1;VM[4].position.z=-.45-sw*.25}
+  const cb=$('charge').firstChild;cb.style.width=((rl<1?rl:pull)*100)+'%';cb.style.background=rl<1?'#888':pull>=1?'#5fbf6a':'#e0b341';
+  const wt=WN.map((n,i)=>i===cur?'<b>'+n+'</b>':n).join(' · ')+(rl<1&&D.reload>1000?' — reloading '+((1-rl)*D.reload/1000).toFixed(1)+'s':'');
+  if(wt!==frame.w){frame.w=wt;$('wpn').innerHTML=wt}
   rend.render(scene,cam);
 }
 requestAnimationFrame(frame);
