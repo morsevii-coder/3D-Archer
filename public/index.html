@@ -1,5 +1,6 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
 <title>3D Archer</title>
+<link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#0a1a0e"><link rel="apple-touch-icon" href="/icon-192.png">
 <style>
 *{box-sizing:border-box}body{margin:0;overflow:hidden;font-family:Georgia,'Times New Roman',serif;background:#0a1a0e;color:#f3ecd2}
 canvas{display:block}
@@ -82,6 +83,7 @@ canvas{display:block}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="shared.js"></script>
 <script>
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 const $=id=>document.getElementById(id);
 let ws,me=null,players=new Map(),arrows=new Map(),impacts=new Set(),mobModels=new Map(),selfData=null,yaw=0,pitch=0,vy=0,charging=0,dead=false,locked=false,joined=false,knifeSlashStyle=2,survivalMode=false,gameOver=false,survivalElapsed=0;
 const touchMode='ontouchstart' in window||navigator.maxTouchPoints>0;
