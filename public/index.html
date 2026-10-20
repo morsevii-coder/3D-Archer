@@ -68,7 +68,7 @@ canvas{display:block}
   #msg{font-size:20px}
   #tab{min-width:0;padding:8px 12px}
 }
-#exitBtn{position:absolute;top:10px;right:max(12px,env(safe-area-inset-right));pointer-events:auto;z-index:5;border:1px solid #f3ecd299;color:#fff8e6;background:#07140dcc;padding:6px 12px;border-radius:6px;font:700 13px system-ui,sans-serif;cursor:pointer}
+#exitBtn{position:absolute;top:10px;left:50%;transform:translateX(-50%);pointer-events:auto;z-index:5;border:1px solid #f3ecd299;color:#fff8e6;background:#07140dcc;padding:6px 12px;border-radius:6px;font:700 13px system-ui,sans-serif;cursor:pointer}
 </style></head><body>
 <div id="menu"><h1>3D Archer</h1><p>Three hearts. One arrow. Mind the drop.<br><small>Hold Tab for the scoreboard · M to mute · Q to swap weapon</small></p>
 <input id="name" maxlength="14" placeholder="Your name">
@@ -412,6 +412,7 @@ $('pub').onclick=()=>go('public');$('sur').onclick=()=>go('survival');$('mk').on
 $('jn').onclick=()=>go('join',$('jc').value);
 function switchWeapon(){if(!joined||dead||gameOver)return;cur=(cur+1)%WN.length;charging=0;tx({t:'w',i:cur});sfx.swap()}
 function startFire(e,touch=false){
+  if(!joined||(e&&e.target.closest&&e.target.closest('#exitBtn')))return;
   if(e&&e.cancelable)e.preventDefault();
   if(!joined||dead||gameOver||(!touch&&!locked))return;const D=WD[WN[cur]],now=performance.now();
   if(now-shotAt[cur]<D.reload)return;
@@ -422,7 +423,7 @@ function releaseFire(e){
   if(!charging)return;const D=WD[WN[cur]],held=performance.now()-charging;charging=0;
   if(!dead&&!gameOver&&held>=D.charge)fire();
 }
-addEventListener('keydown',e=>{keys[e.code]=1;if(e.code==='Tab'){e.preventDefault();if(joined)showTab(true)}if(e.code==='KeyM'&&master)master.gain.value=master.gain.value?0:.5;if(e.code==='KeyQ'&&joined&&!dead&&!e.repeat)switchWeapon()});
+addEventListener('keydown',e=>{if(!joined&&e.target&&e.target.tagName==='INPUT')return;keys[e.code]=1;if(e.code==='Tab'){e.preventDefault();if(joined)showTab(true)}if(e.code==='KeyM'&&master)master.gain.value=master.gain.value?0:.5;if(e.code==='KeyQ'&&joined&&!dead&&!e.repeat)switchWeapon()});
 addEventListener('keyup',e=>{keys[e.code]=0;if(e.code==='Space')mobileJump=false;if(e.code==='Tab')showTab(false)});addEventListener('blur',()=>{showTab(false);mobileJump=false;if(charging)releaseFire()});
 rend.domElement.addEventListener('click',()=>{audio();if(joined)rend.domElement.requestPointerLock()});
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===rend.domElement;showMsg(gameOver?gameOverText():touchMode?'':locked?(dead?'Eliminated. Respawning…':''):(joined?'Click to play':''))});
