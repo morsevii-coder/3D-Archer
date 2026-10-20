@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
 <title>3D Archer</title>
 <style>
 *{box-sizing:border-box}body{margin:0;overflow:hidden;font-family:Georgia,'Times New Roman',serif;background:#0a1a0e;color:#f3ecd2}
@@ -333,7 +333,7 @@ function updateMobileLayout(){
 }
 updateMobileLayout();
 // ---------- network ----------
-function go(mode,code){audio();
+function go(mode,code){audio();if(touchMode){const d=document.documentElement,f=d.requestFullscreen||d.webkitRequestFullscreen;try{const p=f&&f.call(d);if(p&&p.catch)p.catch(()=>{});screen.orientation&&screen.orientation.lock&&screen.orientation.lock('landscape').catch(()=>{})}catch(e){}}
   $('err').textContent='';
   ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
   ws.onopen=()=>ws.send(JSON.stringify({t:'join',name:$('name').value.trim()||'Archer',mode,code}));
@@ -346,7 +346,7 @@ function on(m){
   else if(m.t==='welcome'){
     joined=true;me=m.id;survivalMode=m.mode==='survival';gameOver=false;survivalElapsed=0;buildTrees(m.seed);pos.set(m.x,0,m.z);
     $('menu').style.display='none';$('hud').style.display='block';
-    $('survivalTimer').style.display=survivalMode?'block':'none';$('survivalTimer').textContent='SURVIVED 00:00';
+    $('survivalTimer').style.display=survivalMode?'block':'none';$('survivalTimer').textContent='SURVIVED 00:00 · ANIMALS 0';
     $('code').textContent=m.mode==='survival'?'Survival · Solo':(m.pub?'Public match':'Lobby code: '+m.code);showMsg(touchMode?'':'Click to play');
   }else if(m.t==='s')snapshot(m);
   else if(m.t==='impact')showImpact(m);
@@ -387,7 +387,7 @@ function snapshot(m){
   for(const [id,a] of arrows)if(!as.has(id)){const d1=a.p.distanceTo(cam.position);if(d1<45)sfx.thunk(1-d1/45);scene.remove(a.mesh);arrows.delete(id)}
   if(survivalMode){
     syncMobs(m.mobs||[]);$('survivalTimer').style.display='block';
-    const state=(m.sv||[]).find(s=>s[0]===me);if(state){survivalElapsed=state[1];$('survivalTimer').textContent='SURVIVED '+survivalClock(survivalElapsed)}
+    const state=(m.sv||[]).find(s=>s[0]===me);if(state){survivalElapsed=state[1];$('survivalTimer').textContent='SURVIVED '+survivalClock(survivalElapsed)+' · ANIMALS '+mobModels.size}
   }else{$('survivalTimer').style.display='none';syncMobs([])}
   hud(m.p);
 }
