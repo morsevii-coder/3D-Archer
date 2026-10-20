@@ -1,5 +1,6 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
 <title>3D Archer</title>
+<link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#0a1a0e"><link rel="apple-touch-icon" href="/icon-192.png">
 <style>
 *{box-sizing:border-box}body{margin:0;overflow:hidden;font-family:Georgia,'Times New Roman',serif;background:#0a1a0e;color:#f3ecd2}
 canvas{display:block}
@@ -20,12 +21,12 @@ canvas{display:block}
 #charge{position:absolute;left:50%;bottom:30px;width:200px;height:8px;margin-left:-100px;background:#0008;border-radius:4px;overflow:hidden}
 #charge i{display:block;height:100%;width:0;background:#e0b341}
 #code{position:absolute;top:12px;left:50%;transform:translateX(-50%);background:#0009;padding:6px 14px;border-radius:6px;font-size:14px}
-#survivalTimer{position:absolute;top:12px;left:14px;display:none;background:#07140ddd;border-left:3px solid #cf6548;padding:7px 10px;font:700 16px system-ui,sans-serif;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px #000}
+#survivalTimer{white-space:pre;position:absolute;top:12px;left:14px;display:none;background:#07140ddd;border-left:3px solid #cf6548;padding:7px 10px;font:700 16px system-ui,sans-serif;font-variant-numeric:tabular-nums;text-shadow:0 1px 3px #000}
 #feed{position:absolute;top:12px;left:14px;display:flex;flex-direction:column;gap:4px}
 #feed div{background:#000a;padding:4px 10px;border-radius:3px;font-size:15px;width:fit-content}
 #feed .me{outline:2px solid #e5484d}
 #feed b.k{color:#ffd166}#feed b.v{color:#ff8a80}
-#board{position:absolute;top:12px;right:14px;background:#0008;padding:8px 12px;border-radius:6px;font-size:14px;min-width:160px}
+#board{position:absolute;top:54px;right:14px;background:#0008;padding:8px 12px;border-radius:6px;font-size:14px;min-width:160px}
 #board div{display:flex;justify-content:space-between;gap:16px}#board .me{color:#ffd166}
 #msg{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:28px;background:#0006;text-align:center;white-space:pre-line}
 #flash{position:absolute;inset:0;background:#d00;opacity:0;transition:opacity .3s}
@@ -58,7 +59,8 @@ canvas{display:block}
   #menu .row button{width:82px;padding:7px 4px;font-size:12px}
   #hearts{left:154px;bottom:12px;font-size:26px}
   #me{left:154px;bottom:46px;font-size:14px}
-  #board{top:8px;right:8px;min-width:126px;padding:6px 8px;font-size:12px}
+  #exitBtn{top:8px;right:8px;padding:4px 8px;font-size:11px}
+  #board{top:40px;right:8px;min-width:126px;padding:6px 8px;font-size:12px}
   #feed{top:52px;left:8px}
   #feed div{font-size:12px}
   #survivalTimer{top:8px;left:8px;padding:5px 8px;font-size:13px}
@@ -67,6 +69,7 @@ canvas{display:block}
   #msg{font-size:20px}
   #tab{min-width:0;padding:8px 12px}
 }
+#exitBtn{position:absolute;top:12px;right:14px;pointer-events:auto;z-index:5;border:1px solid #f3ecd299;color:#fff8e6;background:#07140dcc;padding:6px 12px;border-radius:6px;font:700 13px system-ui,sans-serif;cursor:pointer}
 </style></head><body>
 <div id="menu"><h1>3D Archer</h1><p>Three hearts. One arrow. Mind the drop.<br><small>Hold Tab for the scoreboard · M to mute · Q to swap weapon</small></p>
 <input id="name" maxlength="14" placeholder="Your name">
@@ -75,13 +78,14 @@ canvas{display:block}
 <button id="mk">Create lobby</button>
 <div class="row"><input id="jc" maxlength="4" placeholder="CODE"><button id="jn">Join lobby</button></div>
 <div id="err"></div></div>
-<div id="hud"><div id="flash"></div><div id="cross"></div><div id="code"></div><div id="survivalTimer"></div><div id="feed"></div><div id="board"></div>
+<div id="hud"><div id="flash"></div><div id="cross"></div><button id="exitBtn" type="button">Exit to Home</button><div id="code"></div><div id="survivalTimer"></div><div id="feed"></div><div id="board"></div>
 <div id="me"></div><div id="hearts"></div><div id="charge"><i></i></div><div id="msg"></div><div id="wpn"></div><div id="banner"></div><div id="tab"></div>
 <div id="mobileControls"><div id="lookArea" aria-label="Touch and drag to look"></div><div id="movePad" aria-label="Movement joystick"><div id="stick"></div></div><div id="mobileActions"><button id="jumpBtn" type="button">JUMP</button><button id="swapBtn" type="button">SWAP</button><button id="fireBtn" type="button">FIRE</button></div></div>
 <div id="rotatePrompt">Rotate your device to landscape to play.</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="shared.js"></script>
 <script>
+if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 const $=id=>document.getElementById(id);
 let ws,me=null,players=new Map(),arrows=new Map(),impacts=new Set(),mobModels=new Map(),selfData=null,yaw=0,pitch=0,vy=0,charging=0,dead=false,locked=false,joined=false,knifeSlashStyle=2,survivalMode=false,gameOver=false,survivalElapsed=0;
 const touchMode='ontouchstart' in window||navigator.maxTouchPoints>0;
@@ -315,6 +319,7 @@ function mkMob(type){
   }
   return g;
 }
+const animalCounts=()=>{const c={chicken:0,rabbit:0,bear:0};for(const m of mobModels.values())c[m.type]=(c[m.type]||0)+1;return `🐔 ${c.chicken}  🐇 ${c.rabbit}  🐻 ${c.bear}  (Animals ${mobModels.size})`};
 function syncMobs(list){
   const seen=new Set();
   for(const [id,type,x,y,z,hp,maxHp] of list){
@@ -333,21 +338,22 @@ function updateMobileLayout(){
 }
 updateMobileLayout();
 // ---------- network ----------
-function go(mode,code){audio();
+function go(mode,code){audio();if(touchMode){const d=document.documentElement,f=d.requestFullscreen||d.webkitRequestFullscreen;try{const p=f&&f.call(d);if(p&&p.catch)p.catch(()=>{});screen.orientation&&screen.orientation.lock&&screen.orientation.lock('landscape').catch(()=>{})}catch(e){}}
   $('err').textContent='';
   ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
   ws.onopen=()=>ws.send(JSON.stringify({t:'join',name:$('name').value.trim()||'Archer',mode,code}));
   ws.onmessage=e=>on(JSON.parse(e.data));
   ws.onclose=()=>{if(joined)location.reload();else if(!$('err').textContent)$('err').textContent='Cannot reach server'};
 }
+$('exitBtn').onclick=()=>{joined=false;if(document.pointerLockElement)document.exitPointerLock();if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});if(ws)ws.close();location.reload()};
 const tx=o=>ws&&ws.readyState===1&&ws.send(JSON.stringify(o));
 function on(m){
   if(m.t==='err'){$('err').textContent=m.msg;ws.close()}
   else if(m.t==='welcome'){
     joined=true;me=m.id;survivalMode=m.mode==='survival';gameOver=false;survivalElapsed=0;buildTrees(m.seed);pos.set(m.x,0,m.z);
     $('menu').style.display='none';$('hud').style.display='block';
-    $('survivalTimer').style.display=survivalMode?'block':'none';$('survivalTimer').textContent='SURVIVED 00:00';
-    $('code').textContent=m.mode==='survival'?'Survival · Solo':(m.pub?'Public match':'Lobby code: '+m.code);showMsg(touchMode?'':'Click to play');
+    $('survivalTimer').style.display=survivalMode?'block':'none';$('survivalTimer').textContent='SURVIVAL · SOLO\nSURVIVED 00:00\n'+animalCounts();
+    $('code').textContent=m.mode==='survival'?'':(m.pub?'Public match':'Lobby code: '+m.code);$('code').style.display=m.mode==='survival'?'none':'';showMsg(touchMode?'':'Click to play');
   }else if(m.t==='s')snapshot(m);
   else if(m.t==='impact')showImpact(m);
   else if(m.t==='slash')showKnifeMark(m);
@@ -387,7 +393,7 @@ function snapshot(m){
   for(const [id,a] of arrows)if(!as.has(id)){const d1=a.p.distanceTo(cam.position);if(d1<45)sfx.thunk(1-d1/45);scene.remove(a.mesh);arrows.delete(id)}
   if(survivalMode){
     syncMobs(m.mobs||[]);$('survivalTimer').style.display='block';
-    const state=(m.sv||[]).find(s=>s[0]===me);if(state){survivalElapsed=state[1];$('survivalTimer').textContent='SURVIVED '+survivalClock(survivalElapsed)}
+    const state=(m.sv||[]).find(s=>s[0]===me);if(state){survivalElapsed=state[1];$('survivalTimer').textContent='SURVIVAL · SOLO\nSURVIVED '+survivalClock(survivalElapsed)+'\n'+animalCounts()}
   }else{$('survivalTimer').style.display='none';syncMobs([])}
   hud(m.p);
 }
@@ -407,6 +413,7 @@ $('pub').onclick=()=>go('public');$('sur').onclick=()=>go('survival');$('mk').on
 $('jn').onclick=()=>go('join',$('jc').value);
 function switchWeapon(){if(!joined||dead||gameOver)return;cur=(cur+1)%WN.length;charging=0;tx({t:'w',i:cur});sfx.swap()}
 function startFire(e,touch=false){
+  if(!joined||(e&&e.target.closest&&e.target.closest('#exitBtn')))return;
   if(e&&e.cancelable)e.preventDefault();
   if(!joined||dead||gameOver||(!touch&&!locked))return;const D=WD[WN[cur]],now=performance.now();
   if(now-shotAt[cur]<D.reload)return;
@@ -417,7 +424,7 @@ function releaseFire(e){
   if(!charging)return;const D=WD[WN[cur]],held=performance.now()-charging;charging=0;
   if(!dead&&!gameOver&&held>=D.charge)fire();
 }
-addEventListener('keydown',e=>{keys[e.code]=1;if(e.code==='Tab'){e.preventDefault();if(joined)showTab(true)}if(e.code==='KeyM'&&master)master.gain.value=master.gain.value?0:.5;if(e.code==='KeyQ'&&joined&&!dead&&!e.repeat)switchWeapon()});
+addEventListener('keydown',e=>{if(!joined&&e.target&&e.target.tagName==='INPUT')return;keys[e.code]=1;if(e.code==='Tab'){e.preventDefault();if(joined)showTab(true)}if(e.code==='KeyM'&&master)master.gain.value=master.gain.value?0:.5;if(e.code==='KeyQ'&&joined&&!dead&&!e.repeat)switchWeapon()});
 addEventListener('keyup',e=>{keys[e.code]=0;if(e.code==='Space')mobileJump=false;if(e.code==='Tab')showTab(false)});addEventListener('blur',()=>{showTab(false);mobileJump=false;if(charging)releaseFire()});
 rend.domElement.addEventListener('click',()=>{audio();if(joined)rend.domElement.requestPointerLock()});
 document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===rend.domElement;showMsg(gameOver?gameOverText():touchMode?'':locked?(dead?'Eliminated. Respawning…':''):(joined?'Click to play':''))});

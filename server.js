@@ -13,7 +13,7 @@ const W=[
   {name:'dagger',charge:0,reload:0,speed:85,g:0,miss:.5},
   {name:'knife',charge:0,reload:100,melee:2.6}
 ];
-const types={'.html':'text/html','.js':'text/javascript'};
+const types={'.html':'text/html','.js':'text/javascript','.webmanifest':'application/manifest+json','.png':'image/png'};
 const server=http.createServer((q,r)=>{
   let f=q.url.split('?')[0];if(f==='/')f='/index.html';
   const p=path.join(PUB,f);
