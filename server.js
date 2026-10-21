@@ -4,21 +4,21 @@ const PUB=fs.existsSync(path.join(__dirname,'public','shared.js'))?path.join(__d
 if(!fs.existsSync(path.join(PUB,'shared.js'))||!fs.existsSync(path.join(PUB,'index.html')))
   throw new Error('shared.js / index.html not found. Put them in a "public" folder next to server.js. Looked in: '+PUB);
 const S=require(path.join(PUB,'shared.js'));
-const MAXP=8,HP=3,AFK_MS=5000;
-// ---- WEAPON TABLE (tweak freely). charge/reload in ms, speed in m/s, g = arrow gravity (0 = straight) ----
-const W=[
-  {name:'crossbow',charge:1500,reload:0,speed:95,g:0},
-  {name:'bow',charge:500,reload:0,speed:45,g:S.G},
-  {name:'musket',charge:0,reload:5000,speed:160,g:0},
-  {name:'dagger',charge:0,reload:0,speed:85,g:0,miss:.5},
-  {name:'knife',charge:0,reload:100,melee:2.6}
-];
+// ---- TUNING: gameplay values (weapons, mobs, bots, timers, HP) live in config.json ----
+const CFG=JSON.parse(fs.readFileSync(path.join(__dirname,'config.json'),'utf8'));
+const P=CFG.player;
+const MAXP=P.maxPlayers,HP=P.maxHp,HIT=P.bearHitDamage,AFK_MS=P.afkStrikeMs;
+const W=CFG.weapons.map(w=>({name:w.name,damage:w.damage,charge:w.charge,reload:w.reload,speed:w.speed,g:w.gravity,miss:w.missChance,melee:w.meleeRange}));
 const types={'.html':'text/html','.js':'text/javascript','.webmanifest':'application/manifest+json','.png':'image/png'};
 const server=http.createServer((q,r)=>{
   let f=q.url.split('?')[0];if(f==='/')f='/index.html';
   const p=path.join(PUB,f);
   if(!p.startsWith(PUB))return r.writeHead(403).end();
-  fs.readFile(p,(e,d)=>{if(e)return r.writeHead(404).end('404');r.writeHead(200,{'Content-Type':types[path.extname(p)]||'text/plain'});r.end(d)});
+  fs.readFile(p,(e,d)=>{
+    if(e)return r.writeHead(404).end('404');
+    if(f==='/index.html')d=Buffer.from(d.toString().replace('<!--CONFIG-->','<script>const CFG='+JSON.stringify(CFG)+';</script>'));
+    r.writeHead(200,{'Content-Type':types[path.extname(p)]||'text/plain'});r.end(d)
+  });
 });
 const wss=new WebSocketServer({server});
 const rooms=new Map();let nid=1;
@@ -46,10 +46,10 @@ function applyMove(p,m){
   p.y=Math.max(0,Math.min(6,num(m.y,p.y)));p.yaw=num(m.yaw,p.yaw);p.pitch=Math.max(-1.5,Math.min(1.5,num(m.pitch,p.pitch)));
   if(Math.abs(p.x-ox)+Math.abs(p.y-oy)+Math.abs(p.z-oz)>.01||Math.abs(p.yaw-oyaw)+Math.abs(p.pitch-opitch)>.01)p.lastActive=Date.now();
 }
-function respawn(r,p){const s=spawn(r);p.dead=false;p.prot=Date.now()+2000;p.hearts=HP;p.x=s.x;p.z=s.z;p.y=0;p.lastActive=Date.now();send(p,{t:'rs',x:s.x,z:s.z})}
-const MOB_RULES={chicken:{hp:1,points:10,radius:.3,height:.75,speed:.65},rabbit:{hp:2,points:15,radius:.3,height:.7,speed:.85},bear:{hp:5,points:50,radius:.65,height:1.8,speed:1.65}};
+function respawn(r,p){const s=spawn(r);p.dead=false;p.prot=Date.now()+P.spawnProtectionMs;p.hp=HP;p.x=s.x;p.z=s.z;p.y=0;p.lastActive=Date.now();send(p,{t:'rs',x:s.x,z:s.z})}
+const MOB_RULES=CFG.mobs,MS=CFG.mobSpawns;
 function spawnMob(r,type){
-  const rule=MOB_RULES[type],minPlayerDistance=type==='bear'?14:6,maxPlayerDistance=type==='bear'?32:24;
+  const rule=MOB_RULES[type],minPlayerDistance=rule.minPlayerDistance,maxPlayerDistance=rule.maxPlayerDistance;
   for(let i=0;i<40;i++){
     const x=(Math.random()*2-1)*(S.MAP-4),z=(Math.random()*2-1)*(S.MAP-4);
     if(!r.trees.every(t=>Math.hypot(t.x-x,t.z-z)>t.r+rule.radius+1))continue;
@@ -64,15 +64,15 @@ function spawnMob(r,type){
 function maintainMobs(r,now){
   if(!r.mobsStarted){
     r.mobsStarted=true;
-    for(const type of ['chicken','chicken','chicken','rabbit','rabbit','bear','bear','bear','bear','bear'])spawnMob(r,type);
-    r.nextMobSpawn=now+2500;
+    for(const [type,n] of Object.entries(MS.initial))for(let i=0;i<n;i++)spawnMob(r,type);
+    r.nextMobSpawn=now+MS.intervalMs;
   }
   if(now<r.nextMobSpawn)return;
-  const counts={chicken:0,rabbit:0,bear:0};for(const mob of r.mobs)counts[mob.type]++;
-  const bearTarget=5+Math.floor(r.bearsKilled/2);
-  const next=counts.chicken<6?'chicken':counts.rabbit<4?'rabbit':counts.bear<bearTarget?'bear':null;
+  const counts={chicken:0,rabbit:0,pig:0,bear:0};for(const mob of r.mobs)counts[mob.type]++;
+  const bearTarget=MS.bearBase+Math.floor(r.bearsKilled/MS.bearKillsPerExtra);
+  const next=Object.keys(MS.maxCounts).find(t=>counts[t]<MS.maxCounts[t])||(counts.bear<bearTarget?'bear':null);
   if(next)spawnMob(r,next);
-  r.nextMobSpawn=now+2500;
+  r.nextMobSpawn=now+MS.intervalMs;
 }
 function damageMob(r,player,mob,damage){
   mob.hp=Math.max(0,mob.hp-damage);
@@ -80,13 +80,13 @@ function damageMob(r,player,mob,damage){
   r.mobs.splice(r.mobs.indexOf(mob),1);
   if(mob.type==='bear'){
     r.bearsKilled++;
-    const bearTarget=5+Math.floor(r.bearsKilled/2);
+    const bearTarget=MS.bearBase+Math.floor(r.bearsKilled/MS.bearKillsPerExtra);
     let bearCount=r.mobs.filter(other=>other.type==='bear').length;
     while(bearCount<bearTarget&&spawnMob(r,'bear'))bearCount++;
   }
   player.score+=MOB_RULES[mob.type].points;
-  const healed=mob.type==='bear'&&player.hearts<HP;
-  if(healed)player.hearts=Math.min(HP,player.hearts+1);
+  const healed=mob.type==='bear'&&player.hp<HP;
+  if(healed)player.hp=Math.min(HP,player.hp+P.bearKillHeal);
   send(player,{t:'mobKill',mobType:mob.type,points:MOB_RULES[mob.type].points,healed});
 }
 function updateMobs(r,dt,now){
@@ -95,9 +95,9 @@ function updateMobs(r,dt,now){
     if(mob.type==='bear')for(const p of r.players.values())if(!p.dead&&!p.gameOver){const d=Math.hypot(p.x-mob.x,p.z-mob.z);if(d<best){best=d;target=p}}
     if(target){
       const dx=target.x-mob.x,dz=target.z-mob.z,d=Math.hypot(dx,dz)||1;mob.moveX=dx/d;mob.moveZ=dz/d;
-      if(d<mob.radius+.55&&now>=mob.attackAt){
-        mob.attackAt=now+1100;target.hearts=Math.max(0,target.hearts-1);send(target,{t:'hurt'});
-        if(target.hearts===0){
+      if(d<mob.radius+MOB_RULES.bear.attackRange&&now>=mob.attackAt){
+        mob.attackAt=now+MOB_RULES.bear.attackCooldownMs;target.hp=Math.max(0,target.hp-HIT);send(target,{t:'hurt'});
+        if(target.hp===0){
           target.dead=true;target.gameOver=true;
           target.survivedMs=now-target.survivalStart;
           send(target,{t:'gameover',survivedMs:target.survivedMs,score:target.score});
@@ -112,17 +112,11 @@ function updateMobs(r,dt,now){
     }else if(!target)mob.moveUntil=0;
   }
 }
-const BOT_LEVELS={
-  // reaction: ms before first shot at a new target · interval: ms between shots · aim: max aim error (rad)
-  // speed: m/s · range: preferred distance (m) · fire: max shot distance (m) · lead: predicts target movement · dodgeMs: strafe switch interval
-  easy:{reaction:1100,interval:2600,aim:.12,speed:3.2,range:24,fire:32,lead:false,dodgeMs:2500},
-  normal:{reaction:650,interval:1700,aim:.04,speed:4.4,range:28,fire:38,lead:true,dodgeMs:1500},
-  expert:{reaction:250,interval:1000,aim:.015,speed:5.8,range:30,fire:42,lead:true,dodgeMs:900}
-};
+const BOT_LEVELS=CFG.bots;
 function addBot(r){
   const level=r.difficulty,s=spawn(r),id=nid++;
-  r.players.set(id,{id,bot:true,level,name:'Bot ('+level[0].toUpperCase()+level.slice(1)+')',x:s.x,y:0,z:s.z,yaw:0,pitch:0,hearts:HP,score:0,kills:0,knifeSlash:2,
-    survivalStart:0,gameOver:false,dead:false,prot:Date.now()+2000,respawnAt:0,w:0,cs:0,ready:[0,0,0,0,0],
+  r.players.set(id,{id,bot:true,level,name:'Bot ('+level[0].toUpperCase()+level.slice(1)+')',x:s.x,y:0,z:s.z,yaw:0,  pitch:0,hp:HP,score:0,kills:0,knifeSlash:2,
+    survivalStart:0,gameOver:false,dead:false,prot:Date.now()+P.spawnProtectionMs,respawnAt:0,w:0,cs:0,ready:[0,0,0,0,0],
     ai:{target:0,aimAt:0,nextFireAt:0,strafe:1,turnAt:0,wx:0,wz:0,lx:0,lz:0,vx:0,vz:0}});
 }
 function clearShot(r,x0,z0,x1,z1){
@@ -200,9 +194,9 @@ wss.on('connection',ws=>{
         if(r.mode==='bot')return send({ws},{t:'err',msg:'Bot matches are solo'});
         if(r.players.size>=MAXP)return send({ws},{t:'err',msg:'Lobby is full'})}
       const s=spawn(r);
-      me={id:nid++,ws,name:String(m.name||'Archer').slice(0,14),x:s.x,y:0,z:s.z,yaw:0,pitch:0,hearts:HP,score:0,kills:0,knifeSlash:2,
+      me={id:nid++,ws,name:String(m.name||'Archer').slice(0,14),x:s.x,y:0,z:s.z,yaw:0,      pitch:0,hp:HP,score:0,kills:0,knifeSlash:2,
           survivalStart:r.mode==='survival'?Date.now():0,gameOver:false,lastActive:Date.now(),
-          dead:false,prot:Date.now()+2000,respawnAt:0,w:0,cs:0,ready:[0,0,0,0,0]};
+          dead:false,prot:Date.now()+P.spawnProtectionMs,respawnAt:0,w:0,cs:0,ready:[0,0,0,0,0]};
       room=r;r.players.set(me.id,me);
       if(r.mode==='bot')addBot(r);
       send(me,{t:'welcome',id:me.id,code:r.code,pub:r.pub,mode:r.mode,difficulty:r.difficulty,seed:r.seed,x:me.x,z:me.z});
@@ -232,7 +226,7 @@ wss.on('connection',ws=>{
         if(best){
           const mob=room.mode==='survival',nx=me.x-best.x,ny=me.y+1.6-(best.y+(mob?best.height*.55:1)),nz=me.z-best.z,n=Math.hypot(nx,ny,nz)||1;
           bc(room,{t:'slash',style:slash,surface:mob?'mob':'player',x:best.x+nx/n*(mob?best.radius:.35),y:best.y+(mob?best.height*.55:1)+ny/n*.2,z:best.z+nz/n*(mob?best.radius:.35),nx:nx/n,ny:ny/n,nz:nz/n});
-          if(mob)damageMob(room,me,best,1);else damage(room,me,best,HP,me.w);
+          if(mob)damageMob(room,me,best,w.damage);else damage(room,me,best,w.damage,me.w);
         }else{
           let mark=null,markDistance=w.melee;
           const originY=me.y+1.6;
@@ -263,11 +257,11 @@ wss.on('connection',ws=>{
   ws.on('close',()=>{if(!room)return;room.players.delete(me.id);if(![...room.players.values()].some(p=>!p.bot))rooms.delete(room.code)});
 });
 function damage(r,k,v,dmg,wi){
-  v.hearts=Math.max(0,v.hearts-dmg);send(v,{t:'hurt'});
-  if(v.hearts<=0){v.dead=true;v.respawnAt=Date.now()+3000;
-    if(k){k.score+=100;k.kills++}
+  v.hp=Math.max(0,v.hp-dmg);send(v,{t:'hurt'});
+  if(v.hp<=0){v.dead=true;v.respawnAt=Date.now()+P.respawnDelayMs;
+    if(k){k.score+=P.killPoints;k.kills++}
     bc(r,{t:'kill',k:k?k.name:'?',v:v.name,ki:k?k.id:0,vi:v.id,w:wi});
-  }else if(k)k.score+=25;
+  }else if(k)k.score+=P.hitPoints;
   if(k)send(k,{t:'hit'});
 }
 function broadcastImpact(r,a,surface,x,y,z,nx,ny,nz,targetId=0){
@@ -276,9 +270,9 @@ function broadcastImpact(r,a,surface,x,y,z,nx,ny,nz,targetId=0){
 function afkStrike(r,p,now){
   const kind=Math.random()<.5?'lightning':'anvil';
   bc(r,{t:'hazard',kind,x:p.x,z:p.z,vi:p.id,v:p.name});
-  p.hearts=0;
+  p.hp=0;
   if(r.mode==='survival'){p.dead=true;p.gameOver=true;p.survivedMs=now-p.survivalStart;send(p,{t:'gameover',survivedMs:p.survivedMs,score:p.score})}
-  else{p.dead=true;p.respawnAt=now+3000}
+  else{p.dead=true;p.respawnAt=now+P.respawnDelayMs}
 }
 function step(r,dt){
   const now=Date.now();
@@ -300,7 +294,7 @@ function step(r,dt){
         const dx=a.x-mob.x,dz=a.z-mob.z,dy=a.y-(mob.y+mob.height*.5);
         if(dx*dx+dz*dz<mob.radius*mob.radius&&a.y>mob.y&&a.y<mob.y+mob.height){
           const n=Math.hypot(dx,dy,dz)||1;broadcastImpact(r,a,'mob',a.x,a.y,a.z,dx/n,dy/n,dz/n);
-          const owner=r.players.get(a.owner);if(owner&&!owner.gameOver)damageMob(r,owner,mob,1);
+          const owner=r.players.get(a.owner);if(owner&&!owner.gameOver)damageMob(r,owner,mob,W[a.k].damage);
           gone=true;break;
         }
       }
@@ -312,7 +306,7 @@ function step(r,dt){
           if(a.miss&&Math.random()<a.miss){a.skip.add(p.id);continue} // dagger: 50% chance to miss
           const nx=dx,ny=a.y-(p.y+1),nz=dz,n=Math.hypot(nx,ny,nz)||1;
           broadcastImpact(r,a,'player',a.x,a.y,a.z,nx/n,ny/n,nz/n,p.id);
-          damage(r,r.players.get(a.owner),p,1,a.k);gone=true;break;
+          damage(r,r.players.get(a.owner),p,W[a.k].damage,a.k);gone=true;break;
         }
       }
     }
@@ -329,7 +323,7 @@ setInterval(()=>{
     if(tick%2)continue;
     const now=Date.now();
     bc(r,{t:'s',mode:r.mode,
-      p:[...r.players.values()].map(p=>[p.id,p.name,p.x,p.y,p.z,p.yaw,p.pitch,p.hearts,p.score,p.dead?1:0,p.kills]),
+      p:[...r.players.values()].map(p=>[p.id,p.name,p.x,p.y,p.z,p.yaw,p.pitch,p.hp,p.score,p.dead?1:0,p.kills]),
       a:r.arrows.map(a=>[a.id,a.x,a.y,a.z,a.vx,a.vy,a.vz,a.g,a.k]),
       mobs:r.mode==='survival'?r.mobs.map(m=>[m.id,m.type,m.x,m.y,m.z,m.hp,m.maxHp]):[],
       sv:r.mode==='survival'?[...r.players.values()].map(p=>[p.id,p.gameOver?p.survivedMs:now-p.survivalStart,p.gameOver?1:0]):[]});

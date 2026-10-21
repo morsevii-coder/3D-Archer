@@ -17,7 +17,9 @@ canvas{display:block}
 #hud{position:fixed;inset:0;pointer-events:none;display:none;font-family:system-ui,sans-serif}
 #cross{position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px;border:2px solid #fff9;border-radius:50%}
 #cross.hit{border-color:#ff3b3b;transform:scale(1.5)}
-#hearts{position:absolute;left:18px;bottom:16px;font-size:34px;letter-spacing:4px;text-shadow:0 2px 4px #000}
+#hpbar{position:absolute;left:18px;bottom:16px;width:240px;height:24px;border:2px solid #f3ecd2aa;border-radius:4px;background:#07140dcc;overflow:hidden;box-shadow:0 2px 6px #000a}
+#hpfill{height:100%;width:100%;background:linear-gradient(#7ee07a,#2f9a3c);transition:width .15s}
+#hptext{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 14px system-ui,sans-serif;color:#fff8e6;text-shadow:0 1px 2px #000;white-space:nowrap}
 #me{position:absolute;left:18px;bottom:60px;font-size:18px;text-shadow:0 1px 3px #000}
 #charge{position:absolute;left:50%;bottom:30px;width:200px;height:8px;margin-left:-100px;background:#0008;border-radius:4px;overflow:hidden}
 #charge i{display:block;height:100%;width:0;background:#e0b341}
@@ -59,7 +61,7 @@ canvas{display:block}
   #menu .row{width:220px}
   #menu .row input{width:130px}
   #menu .row button{width:82px;padding:7px 4px;font-size:12px}
-  #hearts{left:154px;bottom:12px;font-size:26px}
+  #hpbar{left:154px;bottom:12px;width:170px;height:18px}#hptext{font-size:11px}
   #me{left:154px;bottom:46px;font-size:14px}
   #exitBtn{top:8px;right:8px;padding:4px 8px;font-size:11px}
   #board{top:40px;right:8px;min-width:126px;padding:6px 8px;font-size:12px}
@@ -73,7 +75,7 @@ canvas{display:block}
 }
 #exitBtn{position:absolute;top:12px;right:14px;pointer-events:auto;z-index:5;border:1px solid #f3ecd299;color:#fff8e6;background:#07140dcc;padding:6px 12px;border-radius:6px;font:700 13px system-ui,sans-serif;cursor:pointer}
 </style></head><body>
-<div id="menu"><h1>3D Archer<span class="ver">v1.0.0</span></h1><p>Three hearts. One arrow. Mind the drop.<br><small class="web-hint">Hold Tab for the scoreboard · M to mute · Q to swap weapon</small><small class="mobile-hint">Drag to look · Left stick to move · JUMP · FIRE · SWAP to change weapon</small></p>
+<div id="menu"><h1>3D Archer<span class="ver">v1.0.0</span></h1><p>Watch your HP. One arrow. Mind the drop.<br><small class="web-hint">Hold Tab for the scoreboard · M to mute · Q to swap weapon</small><small class="mobile-hint">Drag to look · Left stick to move · JUMP · FIRE · SWAP to change weapon</small></p>
 <input id="name" maxlength="14" placeholder="Your name">
 <button class="g" id="pub">Play public match</button>
 <button id="bot">Play with Bot</button>
@@ -83,9 +85,10 @@ canvas{display:block}
 <div class="row"><input id="jc" maxlength="4" placeholder="CODE"><button id="jn">Join lobby</button></div>
 <div id="err"></div></div>
 <div id="hud"><div id="flash"></div><div id="cross"></div><button id="exitBtn" type="button">Exit to Home</button><div id="code"></div><div id="survivalTimer"></div><div id="feed"></div><div id="board"></div>
-<div id="me"></div><div id="hearts"></div><div id="charge"><i></i></div><div id="msg"></div><div id="wpn"></div><div id="banner"></div><div id="tab"></div>
+<div id="me"></div><div id="hpbar"><div id="hpfill"></div><span id="hptext"></span></div><div id="charge"><i></i></div><div id="msg"></div><div id="wpn"></div><div id="banner"></div><div id="tab"></div>
 <div id="mobileControls"><div id="lookArea" aria-label="Touch and drag to look"></div><div id="movePad" aria-label="Movement joystick"><div id="stick"></div></div><div id="mobileActions"><button id="jumpBtn" type="button">JUMP</button><button id="swapBtn" type="button">SWAP</button><button id="fireBtn" type="button">FIRE</button></div></div>
 <div id="rotatePrompt">Rotate your device to landscape to play.</div>
+<!--CONFIG-->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="shared.js"></script>
 <script>
@@ -111,7 +114,7 @@ const bushGeo=new THREE.IcosahedronGeometry(1,0),rockGeo=new THREE.DodecahedronG
 const bushMats=[0x244f2b,0x2e6333,0x3a713a,0x567c3b].map(color=>new THREE.MeshLambertMaterial({color}));
 const rockMats=[0x68685e,0x77766a,0x858276,0x5d625e].map(color=>new THREE.MeshLambertMaterial({color}));
 const mobSphereGeo=new THREE.SphereGeometry(1,10,8),mobEyeMat=new THREE.MeshBasicMaterial({color:0x171511});
-const mobMats={chicken:new THREE.MeshLambertMaterial({color:0xf0e9d4}),rabbit:new THREE.MeshLambertMaterial({color:0x9b8974}),bear:new THREE.MeshLambertMaterial({color:0x513828}),beak:new THREE.MeshLambertMaterial({color:0xe5a13c}),comb:new THREE.MeshLambertMaterial({color:0xb94735}),muzzle:new THREE.MeshLambertMaterial({color:0xb59a7e})};
+const mobMats={chicken:new THREE.MeshLambertMaterial({color:0xf0e9d4}),rabbit:new THREE.MeshLambertMaterial({color:0x9b8974}),bear:new THREE.MeshLambertMaterial({color:0x513828}),beak:new THREE.MeshLambertMaterial({color:0xe5a13c}),comb:new THREE.MeshLambertMaterial({color:0xb94735}),muzzle:new THREE.MeshLambertMaterial({color:0xb59a7e}),pig:new THREE.MeshLambertMaterial({color:0xf2a7b0}),snout:new THREE.MeshLambertMaterial({color:0xd9808c})};
 function buildTrees(seed){
   treeGroup.clear();bushGroup.clear();rockGroup.clear();trees=genTrees(seed);
   for(const t of trees){
@@ -244,8 +247,8 @@ function mkXbow(){
 }
 const fpX=mkXbow();fpX.position.set(.16,-.2,-.5);fpX.rotation.y=.04;cam.add(fpX);
 let lastList=[],cur=0,bnT;
-const shotAt=[0,0,0,0,0],WN=['crossbow','bow','musket','dagger','knife'];
-const WD={crossbow:{charge:1500,reload:0},bow:{charge:500,reload:0},musket:{charge:0,reload:5000},dagger:{charge:0,reload:0},knife:{charge:0,reload:100}};
+const shotAt=CFG.weapons.map(()=>0),WN=CFG.weapons.map(w=>w.name);
+const WD=Object.fromEntries(CFG.weapons.map(w=>[w.name,w]));
 const bowGeo=new THREE.TorusGeometry(.4,.025,6,20,Math.PI);bowGeo.rotateZ(Math.PI/2);bowGeo.rotateY(-Math.PI/2);
 function mkBow(){
   const g=new THREE.Group();g.add(new THREE.Mesh(bowGeo,woodMat));
@@ -307,16 +310,17 @@ const sfx={
   dagger:()=>noise(.2,.3,5000,1500),
   knife:()=>noise(.18,.35,1200,4000)
 };
-function label(text){
-  const c=document.createElement('canvas');c.width=256;c.height=64;const x=c.getContext('2d');
-  x.font='bold 34px system-ui';x.textAlign='center';x.fillStyle='#000a';x.fillRect(0,8,256,48);x.fillStyle='#fff';x.fillText(text,128,45);
-  const s=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c),depthTest:false}));s.scale.set(2,.5,1);s.position.y=2.3;s.renderOrder=9;return s;
+function mkHpBar(){
+  const g=new THREE.Group(),bg=new THREE.Sprite(new THREE.SpriteMaterial({color:0x000000,depthTest:false,transparent:true,opacity:.65})),fill=new THREE.Sprite(new THREE.SpriteMaterial({color:0xe53935,depthTest:false}));
+  bg.scale.set(1,.12,1);bg.renderOrder=9;fill.center.set(0,.5);fill.position.x=-.5;fill.renderOrder=10;
+  g.add(bg,fill);g.position.y=2.3;
+  return {g,set:hp=>{const r=Math.max(0,Math.min(1,hp/CFG.player.maxHp));fill.scale.set(r,.12,1);fill.visible=r>0}};
 }
-function mkPlayer(name,id){
+function mkPlayer(id){
   const g=new THREE.Group(),col=new THREE.Color().setHSL((id*.37)%1,.6,.5),m=new THREE.MeshLambertMaterial({color:col});
   const b=new THREE.Mesh(new THREE.CylinderGeometry(.35,.35,1.2,8),m);b.position.y=.6;
   const h=new THREE.Mesh(new THREE.SphereGeometry(.25,10,8),new THREE.MeshLambertMaterial({color:0xe8c39e}));h.position.y=1.5;
-  const wb=mkXbow();wb.scale.setScalar(.7);wb.position.set(.3,1.1,0);g.add(b,h,wb,label(name));scene.add(g);return g;
+  const wb=mkXbow();wb.scale.setScalar(.7);wb.position.set(.3,1.1,0);const hpb=mkHpBar();g.add(b,h,wb,hpb.g);g.userData.setHp=hpb.set;scene.add(g);return g;
 }
 function mkMob(type){
   const g=new THREE.Group(),bodyMat=mobMats[type];
@@ -330,6 +334,11 @@ function mkMob(type){
     part(bodyMat,0,.25,.06,.22,.23,.34);part(bodyMat,0,.48,-.18,.18,.18,.18);part(bodyMat,0,.2,.38,.09,.09,.09);
     part(bodyMat,-.09,.78,-.2,.055,.24,.07);part(bodyMat,.09,.78,-.2,.055,.24,.07);
     for(const x of [-.105,.105])part(mobEyeMat,x,.52,-.34,.022,.025,.015);
+  }else if(type==='pig'){
+    part(bodyMat,0,.4,0,.34,.3,.46);part(bodyMat,0,.5,-.45,.22,.22,.22);part(mobMats.snout,0,.48,-.67,.11,.1,.07);
+    for(const x of [-.1,.1])part(mobEyeMat,x,.56,-.6,.03,.03,.015);
+    for(const x of [-.13,.13])part(bodyMat,x,.67,-.42,.07,.08,.04);
+    for(const x of [-.2,.2])for(const z of [-.2,.2])part(bodyMat,x,.14,z,.09,.16,.09);
   }else{
     part(bodyMat,0,.55,.08,.38,.42,.55);part(bodyMat,0,1.12,-.25,.31,.31,.32);part(mobMats.muzzle,0,1.02,-.53,.19,.15,.13);
     part(mobEyeMat,-.12,1.2,-.52,.035,.035,.025);part(mobEyeMat,.12,1.2,-.52,.035,.035,.025);
@@ -338,7 +347,7 @@ function mkMob(type){
   }
   return g;
 }
-const animalCounts=()=>{const c={chicken:0,rabbit:0,bear:0};for(const m of mobModels.values())c[m.type]=(c[m.type]||0)+1;return `🐔 ${c.chicken}  🐇 ${c.rabbit}  🐻 ${c.bear}  (Animals ${mobModels.size})`};
+const animalCounts=()=>{const c={chicken:0,rabbit:0,pig:0,bear:0};for(const m of mobModels.values())c[m.type]=(c[m.type]||0)+1;return `🐔 ${c.chicken}  🐇 ${c.rabbit}  🐷 ${c.pig}  🐻 ${c.bear}  (Animals ${mobModels.size})`};
 function syncMobs(list){
   const seen=new Set();
   for(const [id,type,x,y,z,hp,maxHp] of list){
@@ -377,8 +386,8 @@ function on(m){
   else if(m.t==='impact')showImpact(m);
   else if(m.t==='slash')showKnifeMark(m);
   else if(m.t==='mobKill'){
-    if(selfData){selfData.sc+=m.points;if(m.healed)selfData.hp=Math.min(3,selfData.hp+1)}
-    $('banner').textContent=m.mobType.toUpperCase()+' +'+m.points+' pts'+(m.healed?' · +1 heart':'');clearTimeout(bnT);bnT=setTimeout(()=>$('banner').textContent='',2200);
+    if(selfData){selfData.sc+=m.points}
+    $('banner').textContent=m.mobType.toUpperCase()+' +'+m.points+' pts'+(m.healed?' · healed':'');clearTimeout(bnT);bnT=setTimeout(()=>$('banner').textContent='',2200);
   }else if(m.t==='gameover'){
     gameOver=true;dead=true;survivalElapsed=m.survivedMs;selfData={...selfData,sc:m.score};showMsg(gameOverText());
     if(document.pointerLockElement===rend.domElement)document.exitPointerLock();
@@ -406,8 +415,8 @@ function snapshot(m){
   for(const [id,name,x,y,z,yw,pt,hp,sc,dd,kl] of m.p){
     seen.add(id);
     if(id===me){selfData={hp,sc,kl};if(dd&&!dead){dead=true;if(survivalMode){gameOver=true;const sv=(m.sv||[]).find(s=>s[0]===me);if(sv)survivalElapsed=sv[1];showMsg(gameOverText())}else showMsg('Eliminated. Respawning…')}continue}
-    let p=players.get(id);if(!p){p={g:mkPlayer(name,id)};players.set(id,p)}
-    p.t=new THREE.Vector3(x,y,z);p.yaw=yw;p.g.visible=!dd;if(!p.init){p.g.position.copy(p.t);p.init=1}
+    let p=players.get(id);if(!p){p={g:mkPlayer(id)};players.set(id,p)}
+    p.t=new THREE.Vector3(x,y,z);p.yaw=yw;p.g.visible=!dd;p.g.userData.setHp(hp);if(!p.init){p.g.position.copy(p.t);p.init=1}
   }
   for(const [id,p] of players)if(!seen.has(id)){scene.remove(p.g);players.delete(id)}
   const as=new Set();
@@ -424,13 +433,13 @@ function snapshot(m){
   hud(m.p);
 }
 function hud(list){lastList=list;if($('tab').style.display==='block')renderTab();
-  if(selfData){$('hearts').textContent='❤'.repeat(selfData.hp)+'🖤'.repeat(Math.max(0,3-selfData.hp));$('me').textContent=selfData.sc+' pts · '+selfData.kl+' kills'}
+  if(selfData){const hp=Math.max(0,selfData.hp);$('hpfill').style.width=hp/CFG.player.maxHp*100+'%';$('hpfill').style.background=hp<=CFG.player.lowHpThreshold?'linear-gradient(#ff8a80,#c62828)':'linear-gradient(#7ee07a,#2f9a3c)';$('hptext').textContent='HP '+hp+' / '+CFG.player.maxHp;$('me').textContent=selfData.sc+' pts · '+selfData.kl+' kills'}
   $('board').innerHTML=[...list].sort((a,b)=>b[8]-a[8]).slice(0,6).map(p=>`<div class="${p[0]===me?'me':''}"><span>${p[1].replace(/</g,'&lt;')}</span><span>${p[8]}</span></div>`).join('');
 }
 const esc=t=>String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function renderTab(){
-  $('tab').innerHTML='<h2>Scoreboard</h2><table><tr><th>Archer</th><th>Kills</th><th>Points</th><th>Hearts</th></tr>'+
-  [...lastList].sort((a,b)=>b[8]-a[8]).map(p=>`<tr class="${p[0]===me?'me':p[9]?'x':''}"><td>${esc(p[1])}</td><td>${p[10]}</td><td>${p[8]}</td><td>${p[9]?'dead':'❤'.repeat(p[7])}</td></tr>`).join('')+'</table>';
+  $('tab').innerHTML='<h2>Scoreboard</h2><table><tr><th>Archer</th><th>Kills</th><th>Points</th><th>HP</th></tr>'+
+  [...lastList].sort((a,b)=>b[8]-a[8]).map(p=>`<tr class="${p[0]===me?'me':p[9]?'x':''}"><td>${esc(p[1])}</td><td>${p[10]}</td><td>${p[8]}</td><td>${p[9]?'dead':p[7]}</td></tr>`).join('')+'</table>';
 }
 function showTab(on){$('tab').style.display=on?'block':'none';if(on)renderTab()}
 function showMsg(t){const e=$('msg');e.textContent=t;e.style.display=t?'flex':'none'}
@@ -485,7 +494,7 @@ let last=performance.now(),sent=0;
 function frame(now){
   requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000);last=now;
   if(joined&&(locked||mobileMode)&&!gameOver){
-    const f=Math.max(-1,Math.min(1,(keys.KeyW?1:0)-(keys.KeyS?1:0)-mobileMoveY)),s=Math.max(-1,Math.min(1,(keys.KeyD?1:0)-(keys.KeyA?1:0)+mobileMoveX)),sp=(keys.ShiftLeft?9:6)*dt*(dead?2:1);
+    const f=Math.max(-1,Math.min(1,(keys.KeyW?1:0)-(keys.KeyS?1:0)-mobileMoveY)),s=Math.max(-1,Math.min(1,(keys.KeyD?1:0)-(keys.KeyA?1:0)+mobileMoveX)),sp=(keys.ShiftLeft?CFG.movement.sprintSpeed:CFG.movement.walkSpeed)*(WN[cur]==='knife'?CFG.movement.knifeSpeedMultiplier:charging?CFG.movement.drawSpeedMultiplier:1)*dt*(dead?CFG.movement.deadSpeedMultiplier:1);
     const l=Math.hypot(f,s)||1,sy=Math.sin(yaw),cy=Math.cos(yaw);
     pos.x+=(-sy*f+cy*s)/l*sp;pos.z+=(-cy*f-sy*s)/l*sp;
     pos.x=Math.max(-MAP,Math.min(MAP,pos.x));pos.z=Math.max(-MAP,Math.min(MAP,pos.z));

@@ -1,0 +1,46 @@
+{
+  "player": {
+    "maxHp": 100,
+    "lowHpThreshold": 34,
+    "maxPlayers": 8,
+    "respawnDelayMs": 3000,
+    "spawnProtectionMs": 2000,
+    "afkStrikeMs": 5000,
+    "bearHitDamage": 34,
+    "bearKillHeal": 34,
+    "killPoints": 100,
+    "hitPoints": 25
+  },
+  "movement": {
+    "walkSpeed": 6,
+    "sprintSpeed": 9,
+    "deadSpeedMultiplier": 2,
+    "knifeSpeedMultiplier": 1.1,
+    "drawSpeedMultiplier": 0.95
+  },
+  "weapons": [
+    { "name": "crossbow", "damage": 50, "charge": 1500, "reload": 0, "speed": 95, "gravity": 0 },
+    { "name": "bow", "damage": 20, "charge": 500, "reload": 0, "speed": 45, "gravity": 16 },
+    { "name": "musket", "damage": 70, "charge": 0, "reload": 5000, "speed": 160, "gravity": 0 },
+    { "name": "dagger", "damage": 10, "charge": 0, "reload": 0, "speed": 85, "gravity": 0, "missChance": 0.5 },
+    { "name": "knife", "damage": 100, "charge": 0, "reload": 100, "meleeRange": 2.6 }
+  ],
+  "mobs": {
+    "chicken": { "hp": 10, "points": 10, "radius": 0.3, "height": 0.75, "speed": 0.65, "minPlayerDistance": 6, "maxPlayerDistance": 24 },
+    "rabbit": { "hp": 20, "points": 15, "radius": 0.3, "height": 0.7, "speed": 0.85, "minPlayerDistance": 6, "maxPlayerDistance": 24 },
+    "pig": { "hp": 50, "points": 30, "radius": 0.45, "height": 0.8, "speed": 0.9, "minPlayerDistance": 6, "maxPlayerDistance": 24 },
+    "bear": { "hp": 100, "points": 50, "radius": 0.65, "height": 1.8, "speed": 1.65, "minPlayerDistance": 14, "maxPlayerDistance": 32, "attackRange": 0.55, "attackCooldownMs": 1100 }
+  },
+  "mobSpawns": {
+    "intervalMs": 2500,
+    "initial": { "chicken": 3, "rabbit": 2, "pig": 2, "bear": 5 },
+    "maxCounts": { "chicken": 6, "rabbit": 4, "pig": 3 },
+    "bearBase": 5,
+    "bearKillsPerExtra": 2
+  },
+  "bots": {
+    "easy": { "reaction": 1100, "interval": 2600, "aim": 0.12, "speed": 3.2, "range": 24, "fire": 32, "lead": false, "dodgeMs": 2500 },
+    "normal": { "reaction": 650, "interval": 1700, "aim": 0.04, "speed": 4.4, "range": 28, "fire": 38, "lead": true, "dodgeMs": 1500 },
+    "expert": { "reaction": 250, "interval": 1000, "aim": 0.015, "speed": 5.8, "range": 30, "fire": 42, "lead": true, "dodgeMs": 900 }
+  }
+}
