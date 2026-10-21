@@ -31,6 +31,7 @@ canvas{display:block}
 #msg{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:28px;background:#0006;text-align:center;white-space:pre-line}
 #flash{position:absolute;inset:0;background:#d00;opacity:0;transition:opacity .3s}
 #mobileControls,#rotatePrompt{display:none}
+.mobile .web-hint,:not(.mobile) .mobile-hint{display:none}
 #mobileControls{position:fixed;inset:0;z-index:8;pointer-events:none;font:700 12px system-ui,sans-serif;user-select:none;-webkit-user-select:none}
 #lookArea{position:absolute;inset:0 150px 0 27%;pointer-events:auto;touch-action:none}
 #movePad{position:absolute;left:max(14px,env(safe-area-inset-left));bottom:max(14px,env(safe-area-inset-bottom));width:132px;height:132px;border:1px solid #f3ecd277;border-radius:50%;background:#07140d88;box-shadow:inset 0 0 0 12px #ffffff0d;pointer-events:auto;touch-action:none}
@@ -71,7 +72,7 @@ canvas{display:block}
 }
 #exitBtn{position:absolute;top:12px;right:14px;pointer-events:auto;z-index:5;border:1px solid #f3ecd299;color:#fff8e6;background:#07140dcc;padding:6px 12px;border-radius:6px;font:700 13px system-ui,sans-serif;cursor:pointer}
 </style></head><body>
-<div id="menu"><h1>3D Archer</h1><p>Three hearts. One arrow. Mind the drop.<br><small>Hold Tab for the scoreboard · M to mute · Q to swap weapon</small></p>
+<div id="menu"><h1>3D Archer</h1><p>Three hearts. One arrow. Mind the drop.<br><small class="web-hint">Hold Tab for the scoreboard · M to mute · Q to swap weapon</small><small class="mobile-hint">Drag to look · Left stick to move · JUMP · FIRE · SWAP to change weapon</small></p>
 <input id="name" maxlength="14" placeholder="Your name">
 <button class="g" id="pub">Play public match</button>
 <button id="sur">Play survival</button>
@@ -88,7 +89,9 @@ canvas{display:block}
 if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 const $=id=>document.getElementById(id);
 let ws,me=null,players=new Map(),arrows=new Map(),impacts=new Set(),mobModels=new Map(),selfData=null,yaw=0,pitch=0,vy=0,charging=0,dead=false,locked=false,joined=false,knifeSlashStyle=2,survivalMode=false,gameOver=false,survivalElapsed=0;
-const touchMode='ontouchstart' in window||navigator.maxTouchPoints>0;
+// Phones and tablets get touch controls; touchscreen laptops and desktops keep keyboard/mouse.
+const mobileMode=matchMedia('(pointer:coarse)').matches||/Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent);
+document.documentElement.classList.toggle('mobile',mobileMode);
 let stickPointer=null,lookPointer=null,mobileFirePointer=null,mobileJump=false,mobileMoveX=0,mobileMoveY=0,lookX=0,lookY=0;
 const pos=new THREE.Vector3(),keys={};let trees=[];
 // ---------- scene ----------
@@ -333,12 +336,12 @@ const survivalClock=ms=>{const seconds=Math.floor(Math.max(0,ms)/1000);return St
 const gameOverText=()=>`GAME OVER\nSurvived ${survivalClock(survivalElapsed)}\nScore ${selfData?selfData.sc:0}`;
 function updateMobileLayout(){
   const landscape=innerWidth>innerHeight;
-  $('mobileControls').style.display=touchMode&&landscape?'block':'none';
-  $('rotatePrompt').style.display=touchMode&&innerWidth<=800&&innerHeight>=innerWidth?'flex':'none';
+  $('mobileControls').style.display=mobileMode&&landscape?'block':'none';
+  $('rotatePrompt').style.display=mobileMode&&innerWidth<=800&&innerHeight>=innerWidth?'flex':'none';
 }
 updateMobileLayout();
 // ---------- network ----------
-function go(mode,code){audio();if(touchMode){const d=document.documentElement,f=d.requestFullscreen||d.webkitRequestFullscreen;try{const p=f&&f.call(d);if(p&&p.catch)p.catch(()=>{});screen.orientation&&screen.orientation.lock&&screen.orientation.lock('landscape').catch(()=>{})}catch(e){}}
+function go(mode,code){audio();if(mobileMode){const d=document.documentElement,f=d.requestFullscreen||d.webkitRequestFullscreen;try{const p=f&&f.call(d);if(p&&p.catch)p.catch(()=>{});screen.orientation&&screen.orientation.lock&&screen.orientation.lock('landscape').catch(()=>{})}catch(e){}}
   $('err').textContent='';
   ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
   ws.onopen=()=>ws.send(JSON.stringify({t:'join',name:$('name').value.trim()||'Archer',mode,code}));
@@ -353,7 +356,7 @@ function on(m){
     joined=true;me=m.id;survivalMode=m.mode==='survival';gameOver=false;survivalElapsed=0;buildTrees(m.seed);pos.set(m.x,0,m.z);
     $('menu').style.display='none';$('hud').style.display='block';
     $('survivalTimer').style.display=survivalMode?'block':'none';$('survivalTimer').textContent='SURVIVAL · SOLO\nSURVIVED 00:00\n'+animalCounts();
-    $('code').textContent=m.mode==='survival'?'':(m.pub?'Public match':'Lobby code: '+m.code);$('code').style.display=m.mode==='survival'?'none':'';showMsg(touchMode?'':'Click to play');
+    $('code').textContent=m.mode==='survival'?'':(m.pub?'Public match':'Lobby code: '+m.code);$('code').style.display=m.mode==='survival'?'none':'';showMsg(mobileMode?'':'Click to play');
   }else if(m.t==='s')snapshot(m);
   else if(m.t==='impact')showImpact(m);
   else if(m.t==='slash')showKnifeMark(m);
@@ -426,37 +429,37 @@ function releaseFire(e){
 }
 addEventListener('keydown',e=>{if(!joined&&e.target&&e.target.tagName==='INPUT')return;keys[e.code]=1;if(e.code==='Tab'){e.preventDefault();if(joined)showTab(true)}if(e.code==='KeyM'&&master)master.gain.value=master.gain.value?0:.5;if(e.code==='KeyQ'&&joined&&!dead&&!e.repeat)switchWeapon()});
 addEventListener('keyup',e=>{keys[e.code]=0;if(e.code==='Space')mobileJump=false;if(e.code==='Tab')showTab(false)});addEventListener('blur',()=>{showTab(false);mobileJump=false;if(charging)releaseFire()});
-rend.domElement.addEventListener('click',()=>{audio();if(joined)rend.domElement.requestPointerLock()});
-document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===rend.domElement;showMsg(gameOver?gameOverText():touchMode?'':locked?(dead?'Eliminated. Respawning…':''):(joined?'Click to play':''))});
+rend.domElement.addEventListener('click',()=>{audio();if(joined&&!mobileMode)rend.domElement.requestPointerLock()});
+document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===rend.domElement;showMsg(gameOver?gameOverText():mobileMode?'':locked?(dead?'Eliminated. Respawning…':''):(joined?'Click to play':''))});
 addEventListener('mousemove',e=>{if(!locked)return;yaw-=e.movementX*.0022;pitch=Math.max(-1.5,Math.min(1.5,pitch-e.movementY*.0022))});
 const fire=()=>{shotAt[cur]=performance.now();if(cur===4)knifeSlashStyle=(knifeSlashStyle+1)%3;tx({t:'s',x:pos.x,y:pos.y,z:pos.z,yaw,pitch});sfx[WN[cur]]()};
-addEventListener('mousedown',e=>{if(e.button===0)startFire(e)});
+addEventListener('mousedown',e=>{if(e.button===0&&!mobileMode)startFire(e)});
 addEventListener('mouseup',e=>{if(e.button===0)releaseFire(e)});
 function updateStick(e){
   const rect=$('movePad').getBoundingClientRect(),limit=rect.width*.34,dx=e.clientX-(rect.left+rect.width/2),dy=e.clientY-(rect.top+rect.height/2),length=Math.hypot(dx,dy),scale=length>limit?limit/length:1;
   mobileMoveX=dx*scale/limit;mobileMoveY=dy*scale/limit;$('stick').style.transform=`translate(${dx*scale}px,${dy*scale}px)`;
 }
 function releaseStick(e){if(stickPointer!==e.pointerId)return;stickPointer=null;mobileMoveX=mobileMoveY=0;$('stick').style.transform='translate(0,0)'}
-$('movePad').addEventListener('pointerdown',e=>{if(!touchMode||!joined||gameOver)return;e.preventDefault();stickPointer=e.pointerId;$('movePad').setPointerCapture(e.pointerId);updateStick(e)});
+$('movePad').addEventListener('pointerdown',e=>{if(!mobileMode||!joined||gameOver)return;e.preventDefault();stickPointer=e.pointerId;$('movePad').setPointerCapture(e.pointerId);updateStick(e)});
 $('movePad').addEventListener('pointermove',e=>{if(e.pointerId===stickPointer)updateStick(e)});
 $('movePad').addEventListener('pointerup',releaseStick);$('movePad').addEventListener('pointercancel',releaseStick);
-$('lookArea').addEventListener('pointerdown',e=>{if(!touchMode||!joined||gameOver)return;e.preventDefault();lookPointer=e.pointerId;lookX=e.clientX;lookY=e.clientY;$('lookArea').setPointerCapture(e.pointerId)});
+$('lookArea').addEventListener('pointerdown',e=>{if(!mobileMode||!joined||gameOver)return;e.preventDefault();lookPointer=e.pointerId;lookX=e.clientX;lookY=e.clientY;$('lookArea').setPointerCapture(e.pointerId)});
 $('lookArea').addEventListener('pointermove',e=>{if(e.pointerId!==lookPointer)return;e.preventDefault();yaw-=(e.clientX-lookX)*.004;pitch=Math.max(-1.5,Math.min(1.5,pitch-(e.clientY-lookY)*.004));lookX=e.clientX;lookY=e.clientY});
 function releaseLook(e){if(lookPointer===e.pointerId)lookPointer=null}
 $('lookArea').addEventListener('pointerup',releaseLook);$('lookArea').addEventListener('pointercancel',releaseLook);
-$('fireBtn').addEventListener('pointerdown',e=>{if(!touchMode)return;e.preventDefault();mobileFirePointer=e.pointerId;$('fireBtn').setPointerCapture(e.pointerId);startFire(e,true)});
+$('fireBtn').addEventListener('pointerdown',e=>{if(!mobileMode)return;e.preventDefault();mobileFirePointer=e.pointerId;$('fireBtn').setPointerCapture(e.pointerId);startFire(e,true)});
 function releaseMobileFire(e){if(mobileFirePointer!==e.pointerId)return;mobileFirePointer=null;releaseFire(e)}
 $('fireBtn').addEventListener('pointerup',releaseMobileFire);$('fireBtn').addEventListener('pointercancel',releaseMobileFire);
-$('jumpBtn').addEventListener('pointerdown',e=>{if(!touchMode||!joined||dead||gameOver)return;e.preventDefault();mobileJump=true;$('jumpBtn').setPointerCapture(e.pointerId)});
+$('jumpBtn').addEventListener('pointerdown',e=>{if(!mobileMode||!joined||dead||gameOver)return;e.preventDefault();mobileJump=true;$('jumpBtn').setPointerCapture(e.pointerId)});
 function releaseJump(){mobileJump=false}
 $('jumpBtn').addEventListener('pointerup',releaseJump);$('jumpBtn').addEventListener('pointercancel',releaseJump);
-$('swapBtn').addEventListener('pointerdown',e=>{if(!touchMode)return;e.preventDefault();switchWeapon()});
+$('swapBtn').addEventListener('pointerdown',e=>{if(!mobileMode)return;e.preventDefault();switchWeapon()});
 addEventListener('resize',()=>{cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();rend.setSize(innerWidth,innerHeight);updateMobileLayout()});
 // ---------- loop ----------
 let last=performance.now(),sent=0;
 function frame(now){
   requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000);last=now;
-  if(joined&&(locked||touchMode)&&!gameOver){
+  if(joined&&(locked||mobileMode)&&!gameOver){
     const f=Math.max(-1,Math.min(1,(keys.KeyW?1:0)-(keys.KeyS?1:0)-mobileMoveY)),s=Math.max(-1,Math.min(1,(keys.KeyD?1:0)-(keys.KeyA?1:0)+mobileMoveX)),sp=(keys.ShiftLeft?9:6)*dt*(dead?2:1);
     const l=Math.hypot(f,s)||1,sy=Math.sin(yaw),cy=Math.cos(yaw);
     pos.x+=(-sy*f+cy*s)/l*sp;pos.z+=(-cy*f-sy*s)/l*sp;
