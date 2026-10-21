@@ -4,7 +4,7 @@
 <style>
 *{box-sizing:border-box}body{margin:0;overflow:hidden;font-family:Georgia,'Times New Roman',serif;background:#0a1a0e;color:#f3ecd2}
 canvas{display:block}
-#menu{position:fixed;inset:0;display:flex;flex-direction:column;gap:10px;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 30%,#2a5a34,#08140b 70%)}
+#menu{position:fixed;inset:0;display:flex;flex-direction:column;gap:10px;align-items:center;justify-content:safe center;overflow-y:auto;background:radial-gradient(circle at 50% 30%,#2a5a34,#08140b 70%)}
 #menu h1{font-size:64px;margin:0;font-weight:700;letter-spacing:1px;color:#f0d98a;text-shadow:0 3px 0 #5b3b14}
 #menu .ver{font-size:14px;font-weight:600;letter-spacing:0;vertical-align:middle;margin-left:10px;opacity:.7;text-shadow:none}
 #menu p{margin:0 0 14px;opacity:.75}
@@ -12,7 +12,7 @@ canvas{display:block}
 #menu input{background:#f3ecd2;color:#1b2a1c}
 #menu button{background:#e0b341;color:#2b1a05;cursor:pointer}#menu button.g{background:#5fbf6a;color:#06210b}
 #menu button:focus-visible,#menu input:focus-visible{outline:3px solid #fff}
-#menu .row{display:flex;gap:8px;width:270px}#menu .row input{width:140px;text-transform:uppercase;text-align:center}#menu .row button{width:122px}
+#menu .row{display:flex;gap:8px;width:270px}#menu .row input{width:140px;text-transform:uppercase;text-align:center}#menu .row button{width:122px}#menu #botLevels button{flex:1;width:auto}
 #err{color:#ff9b8f;min-height:18px;font:14px system-ui}
 #hud{position:fixed;inset:0;pointer-events:none;display:none;font-family:system-ui,sans-serif}
 #cross{position:absolute;left:50%;top:50%;width:18px;height:18px;margin:-9px;border:2px solid #fff9;border-radius:50%}
@@ -76,6 +76,8 @@ canvas{display:block}
 <div id="menu"><h1>3D Archer<span class="ver">v1.0.0</span></h1><p>Three hearts. One arrow. Mind the drop.<br><small class="web-hint">Hold Tab for the scoreboard · M to mute · Q to swap weapon</small><small class="mobile-hint">Drag to look · Left stick to move · JUMP · FIRE · SWAP to change weapon</small></p>
 <input id="name" maxlength="14" placeholder="Your name">
 <button class="g" id="pub">Play public match</button>
+<button id="bot">Play with Bot</button>
+<div id="botLevels" class="row" style="display:none"><button data-d="easy">Easy</button><button data-d="normal">Normal</button><button data-d="expert">Expert</button></div>
 <button id="sur">Play survival</button>
 <button id="mk">Create lobby</button>
 <div class="row"><input id="jc" maxlength="4" placeholder="CODE"><button id="jn">Join lobby</button></div>
@@ -212,6 +214,19 @@ function showKnifeMark(m){
   mark.position.copy(position).addScaledVector(normal,.008);mark.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),normal);
   mark.userData.expires=performance.now()+5000;scene.add(mark);impacts.add(mark);
 }
+const hazardFx=[];
+function showHazard(m){
+  const g=new THREE.Group(),t=performance.now();
+  if(m.kind==='anvil'){
+    const top=new THREE.Mesh(new THREE.BoxGeometry(.9,.22,.45),steelMat),base=new THREE.Mesh(new THREE.BoxGeometry(.5,.4,.3),steelMat);
+    base.position.y=-.3;g.add(top,base);g.position.set(m.x,18,m.z);scene.add(g);hazardFx.push({g,t,dur:450,kind:'anvil'});
+    setTimeout(()=>sfx.thunk(1),450);
+  }else{
+    const pts=[];for(let i=0;i<=8;i++){const j=i>0&&i<8?.8:0;pts.push(new THREE.Vector3(m.x+(Math.random()-.5)*j,20-i*2.5,m.z+(Math.random()-.5)*j))}
+    g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0xfff4a0,transparent:true})));
+    scene.add(g);hazardFx.push({g,t,dur:400,kind:'lightning'});sfx.thunk(1);
+  }
+}
 // ---------- crossbow ----------
 const woodMat=new THREE.MeshLambertMaterial({color:0x6b4423}),steelMat=new THREE.MeshLambertMaterial({color:0x3d4349});
 const prodGeo=new THREE.TorusGeometry(.3,.022,6,20,Math.PI);prodGeo.rotateX(-Math.PI/2);
@@ -342,10 +357,10 @@ function updateMobileLayout(){
 }
 updateMobileLayout();
 // ---------- network ----------
-function go(mode,code){audio();if(mobileMode){const d=document.documentElement,f=d.requestFullscreen||d.webkitRequestFullscreen;try{const p=f&&f.call(d);if(p&&p.catch)p.catch(()=>{});screen.orientation&&screen.orientation.lock&&screen.orientation.lock('landscape').catch(()=>{})}catch(e){}}
+function go(mode,code,difficulty){audio();if(mobileMode){const d=document.documentElement,f=d.requestFullscreen||d.webkitRequestFullscreen;try{const p=f&&f.call(d);if(p&&p.catch)p.catch(()=>{});screen.orientation&&screen.orientation.lock&&screen.orientation.lock('landscape').catch(()=>{})}catch(e){}}
   $('err').textContent='';
   ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host);
-  ws.onopen=()=>ws.send(JSON.stringify({t:'join',name:$('name').value.trim()||'Archer',mode,code}));
+  ws.onopen=()=>ws.send(JSON.stringify({t:'join',name:$('name').value.trim()||'Archer',mode,code,difficulty}));
   ws.onmessage=e=>on(JSON.parse(e.data));
   ws.onclose=()=>{if(joined)location.reload();else if(!$('err').textContent)$('err').textContent='Cannot reach server'};
 }
@@ -357,7 +372,7 @@ function on(m){
     joined=true;me=m.id;survivalMode=m.mode==='survival';gameOver=false;survivalElapsed=0;buildTrees(m.seed);pos.set(m.x,0,m.z);
     $('menu').style.display='none';$('hud').style.display='block';
     $('survivalTimer').style.display=survivalMode?'block':'none';$('survivalTimer').textContent='SURVIVAL · SOLO\nSURVIVED 00:00\n'+animalCounts();
-    $('code').textContent=m.mode==='survival'?'':(m.pub?'Public match':'Lobby code: '+m.code);$('code').style.display=m.mode==='survival'?'none':'';showMsg(mobileMode?'':'Click to play');
+    $('code').textContent=m.mode==='survival'?'':m.mode==='bot'?'Vs Bot · '+m.difficulty.replace(/^./,c=>c.toUpperCase()):(m.pub?'Public match':'Lobby code: '+m.code);$('code').style.display=m.mode==='survival'?'none':'';showMsg(mobileMode?'':'Click to play');
   }else if(m.t==='s')snapshot(m);
   else if(m.t==='impact')showImpact(m);
   else if(m.t==='slash')showKnifeMark(m);
@@ -376,6 +391,13 @@ function on(m){
   }else if(m.t==='rs'){pos.set(m.x,0,m.z);vy=0;dead=false;showMsg(locked?'':'Click to play')}
   else if(m.t==='bn'){$('banner').textContent=m.text;clearTimeout(bnT);bnT=setTimeout(()=>$('banner').textContent='',4500)}
   else if(m.t==='hurt'){sfx.hurt();$('flash').style.opacity=.5;setTimeout(()=>$('flash').style.opacity=0,120)}
+  else if(m.t==='hazard'){
+    showHazard(m);
+    const d=document.createElement('div');if(m.vi===me)d.className='me';
+    d.innerHTML=`<b class="v"></b> <span></span>`;d.children[0].textContent=m.v;d.children[1].textContent=(m.kind==='lightning'?'⚡ struck by lightning':'🔨 crushed by anvil')+' (AFK)';
+    $('feed').append(d);setTimeout(()=>d.remove(),5000);if($('feed').children.length>6)$('feed').firstChild.remove();
+    if(m.vi===me){sfx.die();$('flash').style.opacity=.5;setTimeout(()=>$('flash').style.opacity=0,120);$('banner').textContent='AFK for 5s';clearTimeout(bnT);bnT=setTimeout(()=>$('banner').textContent='',3000)}
+  }
   else if(m.t==='hit'){sfx.hit();$('cross').classList.add('hit');setTimeout(()=>$('cross').classList.remove('hit'),150)}
 }
 function snapshot(m){
@@ -414,6 +436,8 @@ function showTab(on){$('tab').style.display=on?'block':'none';if(on)renderTab()}
 function showMsg(t){const e=$('msg');e.textContent=t;e.style.display=t?'flex':'none'}
 // ---------- input ----------
 $('pub').onclick=()=>go('public');$('sur').onclick=()=>go('survival');$('mk').onclick=()=>go('create');
+$('bot').onclick=()=>{const l=$('botLevels');l.style.display=l.style.display==='none'?'':'none'};
+document.querySelectorAll('#botLevels button').forEach(b=>b.onclick=()=>go('bot',null,b.dataset.d));
 $('jn').onclick=()=>go('join',$('jc').value);
 function switchWeapon(){if(!joined||dead||gameOver)return;cur=(cur+1)%WN.length;charging=0;tx({t:'w',i:cur});sfx.swap()}
 function startFire(e,touch=false){
@@ -477,6 +501,9 @@ function frame(now){
   for(const mob of mobModels.values())mob.g.position.lerp(mob.target,.22);
   for(const a of arrows.values()){a.v.y-=a.g*dt;a.p.addScaledVector(a.v,dt);a.mesh.position.copy(a.p);a.mesh.lookAt(a.p.x+a.v.x,a.p.y+a.v.y,a.p.z+a.v.z)} // gravity curve
   for(const mark of impacts){const left=mark.userData.expires-now;if(left<=0){scene.remove(mark);impacts.delete(mark)}else if(left<500)mark.scale.setScalar(left/500)}
+  for(let i=hazardFx.length-1;i>=0;i--){const h=hazardFx[i],p=Math.min(1,(performance.now()-h.t)/h.dur);
+    if(h.kind==='anvil')h.g.position.y=.5+17.5*(1-p)*(1-p);else h.g.children[0].material.opacity=1-p;
+    if(p>=1){scene.remove(h.g);hazardFx.splice(i,1)}}
   const D=WD[WN[cur]],shotElapsed=shotAt[cur]?now-shotAt[cur]:Infinity;
   const rl=D.reload?Math.min(1,shotElapsed/D.reload):1,pull=charging&&D.charge?Math.min(1,(now-charging)/D.charge):0;
   const shotPulse=shotElapsed<.35?Math.exp(-shotElapsed*12):0;

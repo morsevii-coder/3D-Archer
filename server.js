@@ -4,7 +4,7 @@ const PUB=fs.existsSync(path.join(__dirname,'public','shared.js'))?path.join(__d
 if(!fs.existsSync(path.join(PUB,'shared.js'))||!fs.existsSync(path.join(PUB,'index.html')))
   throw new Error('shared.js / index.html not found. Put them in a "public" folder next to server.js. Looked in: '+PUB);
 const S=require(path.join(PUB,'shared.js'));
-const MAXP=8,HP=3;
+const MAXP=8,HP=3,AFK_MS=5000;
 // ---- WEAPON TABLE (tweak freely). charge/reload in ms, speed in m/s, g = arrow gravity (0 = straight) ----
 const W=[
   {name:'crossbow',charge:1500,reload:0,speed:95,g:0},
@@ -22,11 +22,11 @@ const server=http.createServer((q,r)=>{
 });
 const wss=new WebSocketServer({server});
 const rooms=new Map();let nid=1;
-const send=(p,m)=>p.ws.readyState===1&&p.ws.send(JSON.stringify(m));
+const send=(p,m)=>p.ws&&p.ws.readyState===1&&p.ws.send(JSON.stringify(m));
 const bc=(r,m)=>{for(const p of r.players.values())send(p,m)};
-function mkRoom(pub,mode='skirmish'){
+function mkRoom(pub,mode='skirmish',difficulty=null){
   let code;do code=Array.from({length:5},()=>'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.random()*24|0]).join('');while(rooms.has(code));
-  const r={code,pub,mode,seed:Math.random()*1e9|0,players:new Map(),arrows:[],mobs:[],mobsStarted:false,nextMobSpawn:0,bearsKilled:0,round:false,nextStart:0};
+  const r={code,pub,mode,difficulty,seed:Math.random()*1e9|0,players:new Map(),arrows:[],mobs:[],mobsStarted:false,nextMobSpawn:0,bearsKilled:0,round:false,nextStart:0};
   r.trees=S.genTrees(r.seed);rooms.set(code,r);return r;
 }
 function spawn(r){ // skirmish: pick the free spot farthest from other living players
@@ -41,10 +41,12 @@ function spawn(r){ // skirmish: pick the free spot farthest from other living pl
 }
 const num=(v,d=0)=>Number.isFinite(v)?v:d;
 function applyMove(p,m){
+  const ox=p.x,oy=p.y,oz=p.z,oyaw=p.yaw,opitch=p.pitch;
   p.x=Math.max(-S.MAP,Math.min(S.MAP,num(m.x,p.x)));p.z=Math.max(-S.MAP,Math.min(S.MAP,num(m.z,p.z)));
   p.y=Math.max(0,Math.min(6,num(m.y,p.y)));p.yaw=num(m.yaw,p.yaw);p.pitch=Math.max(-1.5,Math.min(1.5,num(m.pitch,p.pitch)));
+  if(Math.abs(p.x-ox)+Math.abs(p.y-oy)+Math.abs(p.z-oz)>.01||Math.abs(p.yaw-oyaw)+Math.abs(p.pitch-opitch)>.01)p.lastActive=Date.now();
 }
-function respawn(r,p){const s=spawn(r);p.dead=false;p.prot=Date.now()+2000;p.hearts=HP;p.x=s.x;p.z=s.z;p.y=0;send(p,{t:'rs',x:s.x,z:s.z})}
+function respawn(r,p){const s=spawn(r);p.dead=false;p.prot=Date.now()+2000;p.hearts=HP;p.x=s.x;p.z=s.z;p.y=0;p.lastActive=Date.now();send(p,{t:'rs',x:s.x,z:s.z})}
 const MOB_RULES={chicken:{hp:1,points:10,radius:.3,height:.75,speed:.65},rabbit:{hp:2,points:15,radius:.3,height:.7,speed:.85},bear:{hp:5,points:50,radius:.65,height:1.8,speed:1.65}};
 function spawnMob(r,type){
   const rule=MOB_RULES[type],minPlayerDistance=type==='bear'?14:6,maxPlayerDistance=type==='bear'?32:24;
@@ -110,6 +112,78 @@ function updateMobs(r,dt,now){
     }else if(!target)mob.moveUntil=0;
   }
 }
+const BOT_LEVELS={
+  // reaction: ms before first shot at a new target · interval: ms between shots · aim: max aim error (rad)
+  // speed: m/s · range: preferred distance (m) · fire: max shot distance (m) · lead: predicts target movement · dodgeMs: strafe switch interval
+  easy:{reaction:1100,interval:2600,aim:.12,speed:3.2,range:24,fire:32,lead:false,dodgeMs:2500},
+  normal:{reaction:650,interval:1700,aim:.04,speed:4.4,range:28,fire:38,lead:true,dodgeMs:1500},
+  expert:{reaction:250,interval:1000,aim:.015,speed:5.8,range:30,fire:42,lead:true,dodgeMs:900}
+};
+function addBot(r){
+  const level=r.difficulty,s=spawn(r),id=nid++;
+  r.players.set(id,{id,bot:true,level,name:'Bot ('+level[0].toUpperCase()+level.slice(1)+')',x:s.x,y:0,z:s.z,yaw:0,pitch:0,hearts:HP,score:0,kills:0,knifeSlash:2,
+    survivalStart:0,gameOver:false,dead:false,prot:Date.now()+2000,respawnAt:0,w:0,cs:0,ready:[0,0,0,0,0],
+    ai:{target:0,aimAt:0,nextFireAt:0,strafe:1,turnAt:0,wx:0,wz:0,lx:0,lz:0,vx:0,vz:0}});
+}
+function clearShot(r,x0,z0,x1,z1){
+  const vx=x1-x0,vz=z1-z0,len2=vx*vx+vz*vz||1;
+  return r.trees.every(t=>{
+    const u=Math.max(0,Math.min(1,((t.x-x0)*vx+(t.z-z0)*vz)/len2));
+    return Math.hypot(x0+vx*u-t.x,z0+vz*u-t.z)>t.r+.1;
+  });
+}
+function pickStep(r,x,z,mx,mz,step){
+  const base=Math.atan2(mz,mx);
+  for(const off of [0,.5,-.5,1,-1,1.6,-1.6,2.4,-2.4]){
+    const dx=Math.cos(base+off),dz=Math.sin(base+off),nx=x+dx*step,nz=z+dz*step;
+    if(Math.abs(nx)<=S.MAP&&Math.abs(nz)<=S.MAP&&r.trees.every(t=>Math.hypot(t.x-nx,t.z-nz)>t.r+.45))return [dx,dz];
+  }
+  return null;
+}
+function updateBots(r,dt,now){
+  for(const bot of r.players.values()){
+    if(!bot.bot||bot.dead)continue;
+    const ai=bot.ai,L=BOT_LEVELS[bot.level];
+    let target=null,best=Infinity;
+    for(const p of r.players.values()){
+      if(p===bot||p.dead||p.gameOver||p.prot>now)continue;
+      const d=Math.hypot(p.x-bot.x,p.z-bot.z);
+      if(d<best){best=d;target=p}
+    }
+    if(!target){ai.target=0}
+    else if(target.id!==ai.target){ai.target=target.id;ai.aimAt=now+L.reaction;ai.lx=target.x;ai.lz=target.z;ai.vx=ai.vz=0}
+    let mx,mz,speed=L.speed;
+    if(target){
+      const dx=target.x-bot.x,dz=target.z-bot.z,d=Math.hypot(dx,dz)||1,ux=dx/d,uz=dz/d;
+      if(now>=ai.turnAt){ai.strafe=-ai.strafe;ai.turnAt=now+L.dodgeMs*(.6+Math.random()*.8)}
+      const forward=d>L.range+3?1:d<L.range-3?-1:0;
+      mx=ux*forward-uz*ai.strafe*.8;mz=uz*forward+ux*ai.strafe*.8;
+    }else{
+      if(now>=ai.turnAt){const a=Math.random()*Math.PI*2;ai.wx=Math.cos(a);ai.wz=Math.sin(a);ai.turnAt=now+1500+Math.random()*2000}
+      mx=ai.wx;mz=ai.wz;speed=L.speed*.4;
+    }
+    const ml=Math.hypot(mx,mz)||1;mx/=ml;mz/=ml;
+    const dir=pickStep(r,bot.x,bot.z,mx,mz,speed*dt);
+    if(dir){bot.x+=dir[0]*speed*dt;bot.z+=dir[1]*speed*dt;mx=dir[0];mz=dir[1]}
+    else ai.turnAt=0;
+    if(Math.hypot(mx,mz)>0)bot.yaw=Math.atan2(-mx,-mz);
+    if(!target)continue;
+    ai.vx=ai.vx*.8+(target.x-ai.lx)/dt*.2;ai.vz=ai.vz*.8+(target.z-ai.lz)/dt*.2;ai.lx=target.x;ai.lz=target.z;
+    const dist=Math.hypot(target.x-bot.x,target.z-bot.z),W0=W[0];
+    let tx=target.x,tz=target.z;
+    if(L.lead){const t=dist/W0.speed;tx+=ai.vx*t;tz+=ai.vz*t}
+    const ex=tx-bot.x,ez=tz-bot.z,ey=target.y+1-(bot.y+1.6),h=Math.hypot(ex,ez)||1;
+    const aimYaw=Math.atan2(-ex,-ez),aimPitch=Math.atan2(ey,h);
+    bot.yaw=aimYaw;bot.pitch=aimPitch;
+    if(now>=ai.aimAt&&now>=ai.nextFireAt&&dist<=L.fire&&clearShot(r,bot.x,bot.z,target.x,target.z)){
+      ai.nextFireAt=now+L.interval;
+      const yaw=aimYaw+(Math.random()*2-1)*L.aim,pitch=aimPitch+(Math.random()*2-1)*L.aim;
+      const dx=-Math.sin(yaw)*Math.cos(pitch),dy=Math.sin(pitch),dz=-Math.cos(yaw)*Math.cos(pitch);
+      r.arrows.push({id:nid++,owner:bot.id,k:0,g:W0.g,miss:0,skip:new Set(),
+        x:bot.x,y:bot.y+1.6,z:bot.z,vx:dx*W0.speed,vy:dy*W0.speed,vz:dz*W0.speed,age:0,n:Math.max(4,Math.ceil(W0.speed/60/.25))});
+    }
+  }
+}
 wss.on('connection',ws=>{
   let room=null,me=null;
   ws.on('message',raw=>{
@@ -117,27 +191,30 @@ wss.on('connection',ws=>{
     if(m.t==='join'&&!room){
       let r;
       if(m.mode==='survival')r=mkRoom(false,'survival');
+      else if(m.mode==='bot')r=mkRoom(false,'bot',BOT_LEVELS[m.difficulty]?m.difficulty:'normal');
       else if(m.mode==='public')r=[...rooms.values()].find(x=>x.pub&&x.mode==='skirmish'&&x.players.size<MAXP)||mkRoom(true,'skirmish');
       else if(m.mode==='create')r=mkRoom(false);
       else{r=rooms.get(String(m.code||'').toUpperCase());
         if(!r)return send({ws},{t:'err',msg:'Lobby not found'});
         if(r.mode==='survival')return send({ws},{t:'err',msg:'Survival runs are solo'});
+        if(r.mode==='bot')return send({ws},{t:'err',msg:'Bot matches are solo'});
         if(r.players.size>=MAXP)return send({ws},{t:'err',msg:'Lobby is full'})}
       const s=spawn(r);
       me={id:nid++,ws,name:String(m.name||'Archer').slice(0,14),x:s.x,y:0,z:s.z,yaw:0,pitch:0,hearts:HP,score:0,kills:0,knifeSlash:2,
-          survivalStart:r.mode==='survival'?Date.now():0,gameOver:false,
+          survivalStart:r.mode==='survival'?Date.now():0,gameOver:false,lastActive:Date.now(),
           dead:false,prot:Date.now()+2000,respawnAt:0,w:0,cs:0,ready:[0,0,0,0,0]};
       room=r;r.players.set(me.id,me);
-      send(me,{t:'welcome',id:me.id,code:r.code,pub:r.pub,mode:r.mode,seed:r.seed,x:me.x,z:me.z});
+      if(r.mode==='bot')addBot(r);
+      send(me,{t:'welcome',id:me.id,code:r.code,pub:r.pub,mode:r.mode,difficulty:r.difficulty,seed:r.seed,x:me.x,z:me.z});
     }else if(!me)return;
     else if(m.t==='m'&&!me.dead&&!me.gameOver)applyMove(me,m);
-    else if(m.t==='w'&&!me.gameOver){me.w=Math.max(0,Math.min(W.length-1,m.i|0));me.cs=0}
-    else if(m.t==='c'&&!me.dead&&!me.gameOver)me.cs=Date.now();
+    else if(m.t==='w'&&!me.gameOver){me.w=Math.max(0,Math.min(W.length-1,m.i|0));me.cs=0;me.lastActive=Date.now()}
+    else if(m.t==='c'&&!me.dead&&!me.gameOver){me.cs=Date.now();me.lastActive=me.cs}
     else if(m.t==='s'&&!me.dead&&!me.gameOver){
       const now=Date.now(),w=W[me.w];
       if(now<me.ready[me.w])return;
       if(w.charge&&(!me.cs||now-me.cs<w.charge-250))return; // must have held the full charge (250ms lag grace)
-      me.cs=0;me.ready[me.w]=now+w.reload;applyMove(me,m);
+      me.cs=0;me.ready[me.w]=now+w.reload;me.lastActive=now;applyMove(me,m);
       const dx=-Math.sin(me.yaw)*Math.cos(me.pitch),dy=Math.sin(me.pitch),dz=-Math.cos(me.yaw)*Math.cos(me.pitch);
       if(w.melee){ // knife: nearest player in front within range = instant kill
         const slash=me.knifeSlash=(me.knifeSlash+1)%3;
@@ -183,7 +260,7 @@ wss.on('connection',ws=>{
         x:me.x,y:me.y+1.6,z:me.z,vx:dx*w.speed,vy:dy*w.speed,vz:dz*w.speed,age:0,n:Math.max(4,Math.ceil(w.speed/60/.25))});
     }
   });
-  ws.on('close',()=>{if(!room)return;room.players.delete(me.id);if(!room.players.size)rooms.delete(room.code)});
+  ws.on('close',()=>{if(!room)return;room.players.delete(me.id);if(![...room.players.values()].some(p=>!p.bot))rooms.delete(room.code)});
 });
 function damage(r,k,v,dmg,wi){
   v.hearts=Math.max(0,v.hearts-dmg);send(v,{t:'hurt'});
@@ -196,9 +273,18 @@ function damage(r,k,v,dmg,wi){
 function broadcastImpact(r,a,surface,x,y,z,nx,ny,nz,targetId=0){
   bc(r,{t:'impact',id:a.id,k:a.k,surface,x,y,z,nx,ny,nz,vx:a.vx,vy:a.vy,vz:a.vz,targetId});
 }
+function afkStrike(r,p,now){
+  const kind=Math.random()<.5?'lightning':'anvil';
+  bc(r,{t:'hazard',kind,x:p.x,z:p.z,vi:p.id,v:p.name});
+  p.hearts=0;
+  if(r.mode==='survival'){p.dead=true;p.gameOver=true;p.survivedMs=now-p.survivalStart;send(p,{t:'gameover',survivedMs:p.survivedMs,score:p.score})}
+  else{p.dead=true;p.respawnAt=now+3000}
+}
 function step(r,dt){
   const now=Date.now();
+  for(const p of r.players.values())if(!p.bot&&!p.dead&&!p.gameOver&&now-p.lastActive>=AFK_MS)afkStrike(r,p,now);
   if(r.mode==='survival'){maintainMobs(r,now);updateMobs(r,dt,now)}
+  if(r.mode==='bot')updateBots(r,dt,now);
   for(let i=r.arrows.length-1;i>=0;i--){
     const a=r.arrows[i];let gone=false;const h=dt/a.n;
     for(let s=0;s<a.n&&!gone;s++){
